@@ -89,6 +89,7 @@
 | OPPO | Find X10 Pro Max（PMX110） | ColorOS 17 | — | ✅ | ✅ |
 | OPPO | Find X9 Ultra（PMA120） | ColorOS 16.0.10 | ❌ 页面和 N6 不同，待补 | 部分 | ✅ 27 个渠道 |
 | OPPO | Find N3 典藏版（PHN110） | ColorOS 16.0.5 | ❌ 待补 | 部分 | ✅ 27 个渠道 |
+| 一加 | Ace 2（PHK110） | ColorOS 16.0.5 / Android 16 | ✅ 2026-10-25 路径实测、整段重跑约 85 秒 | ✅ | 11 个关闭，1 个受限 |
 | 小米 | 18 Pro Max（M154FF） | HyperOS 4 | ⚠️ 路径实测，整段待验证 | ✅ | ✅ |
 | vivo | X300 Ultra（V2547DA） | OriginOS 6 | — | ✅ | ✅ |
 
