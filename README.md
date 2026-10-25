@@ -94,6 +94,7 @@
 | OPPO | Find X9 Ultra（PMA120） | ColorOS 16.0.10 | ❌ 页面和 N6 不同，待补 | 部分 | ✅ 27 个渠道 |
 | OPPO | Find N3 典藏版（PHN110） | ColorOS 16.0.5 | ❌ 待补 | 部分 | ✅ 27 个渠道 |
 | 小米 | 18 Pro Max（M154FF） | HyperOS 4.0.24 | ✅ 10-25 前轮九段通过，新增兼容改动待复测 | ✅ | ✅ |
+| Redmi | Note 12 Turbo（23049RAD8C） | HyperOS OS3.0.5.0 | ✅ 实测通过，九段 3.5 分钟 | ✅ | ✅ |
 | vivo | X300 Ultra（V2547DA） | OriginOS 6 | ⚠️ 脚本已补，整段待真机验证 | ✅ | ✅ |
 
 表格反映 0.2.1 的脚本和验证范围。小米 10、荣耀 Magic7 Pro 等反馈已修复可定位的通用缺陷，但仍需对应真机复测；同品牌参考脚本不等于专用适配，详细记录见 [更新记录](CHANGELOG.md)。
