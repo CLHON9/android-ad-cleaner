@@ -1,6 +1,11 @@
 # vivo / OriginOS 手动清单
 
-路径实测机型：vivo X300 Ultra（V2547DA，OriginOS 6，Android 16），2026-10-22。iQOO 结构相近。当前源码新增机型脚本 `recipes/vivo-V2547DA/`，整段自动执行仍待真机验证；V2547A 也会匹配它，版本不同时走安全模式，不代表 OriginOS 7 已适配。发布与验证范围见[更新记录](../../CHANGELOG.md)。
+路径实测机型：
+
+- vivo X300 Ultra（V2547DA，OriginOS 6，Android 16），2026-10-22。
+- vivo X300 Ultra（V2547A，OriginOS 7，Android 17），2026-10-25。
+
+iQOO 结构相近。当前源码有 `recipes/vivo-V2547DA/` 和 `recipes/vivo-V2547A/` 两份机型脚本：V2547DA 整段自动执行仍待真机验证；V2547A 已真机整段跑通（重跑 126 秒）。两者系统版本不同，入口差异见下文「OriginOS 7（Android 17）的不同之处」，版本对不上时引擎会走安全模式。发布与验证范围见[更新记录](../../CHANGELOG.md)。
 符号：🔴 关掉　🟢 保留　⚠️ 注意
 
 ---
@@ -85,9 +90,42 @@ vivo 推送分类的渠道：`VPushChannel_0`（运营消息）、`VPushChannel_
 
 ---
 
+## OriginOS 7（Android 17）的不同之处
+
+实测机型 vivo X300 Ultra（V2547A，构建 `PD2547B_A_17.1.10.2.W10`），2026-10-25。
+注意 `ro.vivo.os.name` 报的是 `Funtouch`，系统显示名要看 `ro.vivo.os.build.display.id`（OriginOS 7）。
+
+| 项目 | OriginOS 6（V2547DA） | OriginOS 7（V2547A） |
+|---|---|---|
+| 广告与隐私 | 设置 → 安全 → 更多安全设置 → 广告与隐私 | 设置页搜「广告与隐私」，点结果直达 |
+| 浏览器设置 | 我的 → 齿轮 | 首页右上「菜单」→ 设置（底部没有「我的」） |
+| 浏览器隐私权限 | 个性化内容、第三方应用来源个性化推荐 | 多一项「个性化广告推荐」 |
+| 天气设置 | 天气 → 设置 | 右上 `more_btn` → 设置（页内那个「更多」是展开按钮） |
+| i 管家 | 设置 → 关于 → 个性化设置 | 同左，但首屏体检动画期间点「设置」会被吞，要重试 |
+| 关开关的确认框 | — | 弹「温馨提示 → 取消 / 确认关闭」，按钮 `text` 是空的 |
+
+几处实测到的 id 和 Activity（换机型或版本可能变）：
+
+- 系统设置搜索框：`com.android.settings:id/vigour_search_edit`。首页那个「搜索设置项」本身是个 EditText，
+  输入关键词后它自己也含这几个字，按文字查找会先命中它，点上去页面根本不跳、也不报错。
+- 应用商店设置：`com.bbk.appstore/.ui.menu.AppstoreSettingsActivity`
+- 浏览器菜单按钮：`com.vivo.browser:id/menu_btn`，设置页 `...setting.common.activity.SettingActivity`
+- 负一屏设置面板：`com.vivo.hiboard/.settings.AppletSettingActivity`
+- 阅图锁屏：`com.vivo.magazine/.ui.MagazineSettings`
+- 天气：`com.vivo.weather:id/more_btn`，设置页 `com.vivo.weather/.WeatherSettings`
+
+⚠️ 负一屏「热点资讯」页的 8 行开关，整行节点的标题全串成了页标题「热点资讯」；这一页还有 3 个单选钮
+（悬浮 / 经典 / 卡片形态）也是 checkable，按「找 checkable 节点」的通用写法会把它当开关一起拨掉。
+机型脚本 `recipes/vivo-V2547A/recipe.py` 里已按行还原标题、排除单选钮。
+
+---
+
 ## vivo 的坑
 
 | 现象 | 对策 |
 |---|---|
 | 负一屏、全局搜索、主题、i 管家的设置页拉不起来 | 只能从 App 或系统设置里点进去 |
 | 列表行和开关各有一个状态 | 以开关本身为准 |
+| 关开关弹出的确认框，按钮点不到 | 按钮节点的 text 是空的，标题挂在子节点里，要按按钮子树里的文字找 |
+| 点列表项左侧的文字没反应 | 点整行中间。商店「服务管理」、浏览器各设置项都这样 |
+| 负一屏子页 back 多退一层，后面的项全找不到 | 用 Activity 确认还在 `AppletSettingActivity`，不在就重新滑进来 |
