@@ -32,8 +32,12 @@ def settings_page(*path):
 
 @step("广告跟踪")
 def _():
-    # 每个 App 一个开关、没有总开关；新装的 App 默认开
-    if settings_page("隐私", "设备标识与广告", "广告跟踪"):
+    # 每个 App 一个开关、没有总开关；新装的 App 默认开。ColorOS 17 首页改叫「隐私与安全」（#165 社区实测）
+    found = settings_page("隐私", "设备标识与广告", "广告跟踪")
+    if not found:
+        p.miss = 0
+        found = settings_page("隐私与安全", "设备标识与广告", "广告跟踪")
+    if found:
         p.off(page="广告跟踪")
 
 
@@ -102,9 +106,14 @@ def _():
     p.start("com.heytap.browser")
     if p.find("我的", exact=True, edge_ok="tab"):          # X9 Ultra：底部「我的」→ 设置
         p.go("我的", "设置"); p.tap("设置", exact=True, scrolls=0)
-    else:                                                  # Find N6：底部 ☰ → 齿轮
+    elif p.find("菜单") or p.find("更多"):                 # Find N6：底部 ☰ → 齿轮
         p.tap("菜单", scrolls=0) or p.tap("更多", scrolls=0)
         p.tap("设置", scrolls=0)
+    else:
+        # 首页切成「简洁」后没有「我的」和菜单（ColorOS 17，#165）：浏览器在前台时直达设置页；带清栈参数会立刻退出
+        p.d.shell("am start -n com.heytap.browser/.settings.component.BrowserPreferencesPage"); time.sleep(1.2)
+        if "com.heytap.browser" not in p.focus():
+            print("  ✗ 浏览器设置页没有打开"); return
     if p.tap("主页设置", exact=True):
         if p.tap("页面布局", exact=True):
             p.tap("简洁", exact=True, scrolls=0); p.back()

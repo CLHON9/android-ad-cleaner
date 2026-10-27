@@ -1,6 +1,7 @@
 # 荣耀 PNM-AN10（MagicOS 10）机型脚本。2026-10-23 实测通过
 # 变量 p 由 tool/fast.py 注入；ONLY 是要跑的段名列表（空=全跑）
 BUILD = ""
+import re
 import time
 
 ONLY = globals().get("ONLY") or []
@@ -37,7 +38,13 @@ NO = ("取消", "以后再说", "禁止", "暂不", "跳过", "我知道了")
 
 @step("广告跟踪")
 def _():
-    p.setting("广告", "广告与隐私")
+    if not p.setting("广告", "广告与隐私"):
+        # 部分 MagicOS 10 机型设置搜索框打不开（#88 #99），按菜单进：隐私和安全 → 其他隐私和安全功能 → 广告与隐私
+        p.d.shell("am start -f 0x10008000 -a android.settings.SETTINGS"); time.sleep(1.2)
+        p.miss = 0
+        if not (p.tap("隐私和安全", exact=True) and p.tap("其他隐私和安全功能", exact=True)
+                and p.tap("广告与隐私", exact=True)):
+            return
     p.tap("更多选项", scrolls=0)
     if p.find("显示系统程序", exact=True):
         p.tap("显示系统程序", exact=True, scrolls=0)
@@ -127,6 +134,8 @@ def _():
 
 
 def browser_settings():
+    if "package:" not in p.d.shell("pm path com.honor.browser").output:
+        return baidu_browser()
     p.start("com.honor.browser")
     p.dismiss()
     if p.find("我的", exact=True):                       # 经典首页：我的 → 右上第三个图标
@@ -138,9 +147,38 @@ def browser_settings():
         p.tap("设置", exact=True, scrolls=0)
 
 
+def baidu_browser():
+    """新机预装 com.hihonor.baidu.browser（#87 社区实测 PTP-AN00）：我的 → 右上齿轮 → 消息设置 / 隐私设置。
+    「广告设置」是网页，读不到开关；其中「不看程序化广告」「不看个性化广告」要打开，请手动处理。"""
+    p.start("com.hihonor.baidu.browser")
+    p.dismiss()
+    for text, (l, t, r, b), _ in p.texts():
+        if text == "我的" and t >= p.H * 0.8:
+            p.click((l + r) // 2, (t + b) // 2); time.sleep(1); break
+    else:
+        print("  ✗ 没找到底部「我的」"); return False
+    from fast import bounds
+    icons = [n for n in p.tree().iter("node") if n.get("clickable") == "true" and p.on_screen(n)
+             and bounds(n)[3] < p.H * 0.15 and bounds(n)[0] > p.W * 0.5
+             and re.search(r"设置|setting", (n.get("content-desc") or "") + (n.get("resource-id") or ""), re.I)]
+    if len(icons) != 1:
+        print("  ✗ 没找到右上角唯一的设置图标"); return False
+    l, t, r, b = bounds(icons[0]); p.click((l + r) // 2, (t + b) // 2); time.sleep(1)
+    if p.tap("消息设置", exact=True):
+        p.off(only=["新闻热点", "兴趣推送"], page="浏览器·消息设置")
+        p.back()
+    if p.tap("隐私设置", exact=True):
+        p.off(only=["搜索个性化推荐", "搜索下一条推荐"], page="浏览器·隐私设置")
+        p.back()
+    print("  · 「隐私设置 → 偏好设置 → 广告设置」是网页，请手动打开「不看程序化广告」「不看个性化广告」")
+    p.back(2)
+    return False
+
+
 @step("浏览器")
 def _():
-    browser_settings()
+    if browser_settings() is False:
+        return
     p.tap("模式选择", exact=True)
     p.tap("简洁首页", exact=True, scrolls=0)
     p.back()

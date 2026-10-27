@@ -14,10 +14,14 @@ else
   VENV=gui/.venv; RUN=(); TAG=arm64; PYVER=cpython-3.12-macos-aarch64
 fi
 if [ ! -x $VENV/bin/python ]; then
-  uv venv --python $PYVER $VENV
+  # 只用 uv 自带的 Python（最低 macOS 11）。Homebrew 的 Python 按本机系统编译，0.2.0–0.2.3 的 Intel 包因此要求 macOS 26（#103）。
+  uv venv --python-preference only-managed --python $PYVER $VENV
   uv pip install --python $VENV/bin/python -r requirements.txt pywebview pyinstaller pillow
 fi
 PY=$VENV/bin/python
+if [ "$($PY -c 'import sysconfig;print(int(sysconfig.get_config_var("MACOSX_DEPLOYMENT_TARGET").split(".")[0]) <= 11)')" != "True" ]; then
+  echo "$VENV 的 Python 要求高于 macOS 11，删掉 $VENV 后重跑" >&2; exit 1
+fi
 VER=$($PY -c "import re;print(re.search(r'VERSION = \"([^\"]+)\"', open('gui/app.py', encoding='utf-8').read()).group(1))")
 OUT=gui/dist/$ARCH
 rm -rf gui/build/$ARCH $OUT; mkdir -p gui/build
@@ -34,6 +38,13 @@ $RUN $PY -m PyInstaller --noconfirm --windowed --name "$NAME" \
   gui/app.py >/dev/null 2>gui/build/pyinstaller-$ARCH.log
 APP="$OUT/$NAME.app"
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VER" "$APP/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Add :LSMinimumSystemVersion string 11.0" "$APP/Contents/Info.plist"
+# 包里任何一个库要求高于 macOS 11，旧系统就打不开：发布前拦下
+# 逐个文件查：vtool 遇到非 Mach-O 文件会返回错误，直接交给 xargs 会让它中途停下、漏查。
+NEWER=$(find "$APP" -type f \( -name "*.so" -o -name "*.dylib" -o -perm +111 \) -print0 |
+        xargs -0 sh -c 'for f; do vtool -show-build "$f" 2>/dev/null; done; true' _ |
+        awk '/^[^ ].*:$/{f=$0} /LC_VERSION_MIN_MACOSX/{vm=1} /minos/ || (vm && /^ *version/){vm=0; split($2,v,"."); if (v[1]+0 > 11) print f, $2}' | sort -u)
+if [ -n "$NEWER" ]; then echo "以下文件要求高于 macOS 11：\n$NEWER" >&2; exit 1; fi
 echo "架构：$(file "$APP/Contents/MacOS/$NAME" | sed 's/.*: //')"
 
 if [ -n "$SIGN_ID" ]; then

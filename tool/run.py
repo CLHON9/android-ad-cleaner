@@ -25,6 +25,9 @@ for _st in (sys.stdout, sys.stderr):
         _st.reconfigure(encoding="utf-8", errors="replace")   # Windows 控制台默认不是 UTF-8
     except Exception:
         pass
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import adb_link
+import troubleshooting
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TOOL = os.path.join(ROOT, "tool")
@@ -72,16 +75,24 @@ def adb_bin():
 ADB = adb_bin()
 
 
+def adb_shell(serial, cmd):
+    """手机掉线时等它回来重试一次；仍不在就停止本步骤（Issue #147：以前读到空结果仍显示成功）。"""
+    for attempt in range(2):
+        r = subprocess.run([ADB, "-s", serial, "shell", cmd], capture_output=True, text=True, encoding="utf-8", errors="replace",
+                           creationflags=0x08000000 if os.name == "nt" else 0)
+        if not (r.returncode and adb_link.client_gone(r.stderr)):
+            return r
+        if attempt or not adb_link.wait_for(serial, ADB):
+            sys.exit(str(adb_link.lost(r.stderr)))
+
+
 def sh(serial, cmd, check=False):
-    r = subprocess.run([ADB, "-s", serial, "shell", cmd], capture_output=True, text=True, encoding="utf-8", errors="replace",
-                       creationflags=0x08000000 if os.name == "nt" else 0)
-    return r.stdout.strip()
+    return adb_shell(serial, cmd).stdout.strip()
 
 
 def sh_all(serial, cmd):
     """stdout + stderr：pm suspend 失败的原因在 stderr 里。"""
-    r = subprocess.run([ADB, "-s", serial, "shell", cmd], capture_output=True, text=True, encoding="utf-8", errors="replace",
-                       creationflags=0x08000000 if os.name == "nt" else 0)
+    r = adb_shell(serial, cmd)
     return (r.stdout + r.stderr).strip()
 
 
@@ -159,6 +170,13 @@ def recipe_for(model, brand=""):
 def build_ok(i, rb):
     """录制版本 rb 和这台对不对得上：比 ro.build.display.id，小米再比 HyperOS 版本号。"""
     return (not rb) or i["build"].startswith(rb) or (i.get("os") or "").startswith(rb)
+
+
+def input_blocked(serial, brand):
+    """小米系没开「USB 调试（安全设置）」时，电脑发出的点击会被拒。KEYCODE_UNKNOWN 不触发任何操作。"""
+    if FAMILY.get((brand or "").lower()) != "xiaomi":
+        return False
+    return troubleshooting.input_blocked(sh_all(serial, "input keyevent 0"))
 
 
 def locked(serial):
@@ -338,6 +356,8 @@ def main():
         i = info(s); r, ref = recipe_for(i["model"], i["brand"])
         print(f"机型：{i['name'] if i['name'].upper().startswith(i['brand'].upper()) else i['brand']+' '+i['name']}（{i['model']}），系统 {i['build']}，Android {i['android']}")
         print(f"锁屏：{'是（请机主解锁）' if locked(s) else '否'}")
+        if input_blocked(s, i["brand"]):
+            print("电脑点击：被系统拒绝。" + troubleshooting.XIAOMI_INPUT)
         if r and ref:
             print(f"机型脚本：本型号没有；同品牌参考 {os.path.relpath(r, ROOT)}。要用：recipe --ref（安全模式：只关脚本里点名的开关，找不到就跳过）")
         elif r:
@@ -546,6 +566,7 @@ def main():
             "dev": sh(s, "settings get global development_settings_enabled") == "1",
             "backup": os.path.relpath(latest_backup(s), BACKUPS) if glob.glob(os.path.join(BACKUPS, f"{i['model']}-*")) else None,
             "fold_open": fold_open(s),
+            "input_blocked": input_blocked(s, i["brand"]),
         }, ensure_ascii=False))
 
     elif cmd == "dev-off":

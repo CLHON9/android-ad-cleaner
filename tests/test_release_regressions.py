@@ -142,7 +142,7 @@ class NotificationSelectionTests(unittest.TestCase):
     def test_scan_excludes_honor_service_channels(self):
         names = ["警告", "实时活动", "赛事资讯", "护眼推荐", "活动优惠"]
         data = {("com.example", "recommend_" + str(i)): (name, 3, False) for i, name in enumerate(names)}
-        with patch.object(chan, "Phone"), patch.object(chan, "parse", return_value=(data, {})), \
+        with patch.object(chan, "Phone"), patch.object(chan, "parse", return_value=(data, {})), patch.object(chan, "keep_awake", return_value=None), \
              patch.object(sys, "argv", ["chan_fast.py", "-s", "test", "scan"]), \
              contextlib.redirect_stdout(io.StringIO()) as output:
             chan.main()

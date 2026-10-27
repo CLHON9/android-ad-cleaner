@@ -173,7 +173,7 @@ class ChannelTests(unittest.TestCase):
         p.click.assert_called_once()
 
     def test_restore_failure_returns_nonzero(self, _sleep):
-        with patch.object(chan, "Phone", return_value=channel_phone()), \
+        with patch.object(chan, "Phone", return_value=channel_phone()), patch.object(chan, "keep_awake", return_value=None), \
              patch.object(chan, "load", return_value=[("com.example", "promo", "营销")]), \
              patch.object(chan, "parse", return_value=snapshot(False)), \
              patch.object(chan, "toggle", return_value="未确认渠道页"), \

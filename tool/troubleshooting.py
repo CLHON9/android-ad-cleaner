@@ -15,6 +15,17 @@ UI_RECOVERY = (
 )
 
 
+XIAOMI_INPUT = (
+    "小米 / Redmi / POCO 还要在「开发者选项」里打开「USB 调试（安全设置）」（需插 SIM 卡、登录小米账号）。"
+    "不开它，电脑能读屏幕，但点不动、改不了设置，会出现大量「没找到」「点击后渠道状态未改变」和中途锁屏。"
+)
+
+
+def input_blocked(output):
+    """小米未开「USB 调试（安全设置）」时，adb 注入点击被拒：INJECT_EVENTS。"""
+    return isinstance(output, str) and "INJECT_EVENTS" in output
+
+
 def is_ui_connection_error(detail):
     return any(marker in detail for marker in (
         "UIAUTOMATION_BUSY", "AccessibilityServiceAlreadyRegisteredError",

@@ -200,11 +200,21 @@ class LaunchTests(unittest.TestCase):
 
     def test_missing_launcher_stops_before_reading_other_app(self):
         p = phone()
-        p.d.shell.return_value = types.SimpleNamespace(exit_code=0, output="No activities found to run, monkey aborted.")
+        p.d.shell.side_effect = [types.SimpleNamespace(exit_code=0, output="No activities found to run, monkey aborted."),
+                                 types.SimpleNamespace(exit_code=0, output="package:/data/app/base.apk")]
         p.texts = Mock()
         with self.assertRaisesRegex(RuntimeError, "无法打开"):
             p.start("com.example.no_launcher")
         p.texts.assert_not_called()
+
+    def test_reference_recipe_app_not_installed_is_named(self):
+        # #87 / #165：参考脚本里的 App 本机没装，说「没有安装」，不报成打开失败。
+        p = phone()
+        p.d.shell.side_effect = [types.SimpleNamespace(exit_code=0, output="No activities found to run, monkey aborted."),
+                                 types.SimpleNamespace(exit_code=0, output="")]
+        p.d.app_stop = Mock()
+        with self.assertRaisesRegex(RuntimeError, "没有安装 com.honor.browser"):
+            p.start("com.honor.browser")
 
     def test_runtime_permission_only_clicks_explicit_deny_button(self):
         p = phone(); p.focus = Mock(return_value="com.android.permissioncontroller/.permission.ui.GrantPermissionsActivity")

@@ -9,7 +9,7 @@ import json, os, platform, re, runpy, shutil, subprocess, sys, threading, time, 
 from pathlib import Path
 
 APP_NAME = "安卓去广告"
-VERSION = "0.2.3"
+VERSION = "0.2.4"
 FROZEN = getattr(sys, "frozen", False)
 BASE = getattr(sys, "_MEIPASS", os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 TOOL = os.path.join(BASE, "tool")
@@ -74,6 +74,18 @@ ADB_URL = {
 }
 
 
+def adb_ok(path):
+    """只用 1.0.41 及以上的 adb。手机助手自带的 1.0.32 等旧版会让挂起、快应用等命令失败，
+    和新版同时运行还会互相顶掉服务（#25 #75）。"""
+    try:
+        out = subprocess.run([path, "version"], capture_output=True, text=True, encoding="utf-8",
+                             errors="replace", timeout=8, creationflags=NOWIN).stdout
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    m = re.search(r"version 1\.0\.(\d+)", out)
+    return bool(m) and int(m.group(1)) >= 41
+
+
 def find_adb():
     exe = "adb.exe" if IS_WIN else "adb"
     cands = [os.path.join(DATA, "platform-tools", exe), shutil.which("adb"),
@@ -81,7 +93,7 @@ def find_adb():
              os.path.join(os.environ.get("LOCALAPPDATA", ""), "Android", "Sdk", "platform-tools", "adb.exe"),
              "/opt/homebrew/bin/adb", "/usr/local/bin/adb"]
     for c in cands:
-        if c and os.path.exists(c):
+        if c and os.path.exists(c) and adb_ok(c):
             return c
     return None
 
@@ -114,6 +126,105 @@ def os_name():
 NOWIN = 0x08000000 if IS_WIN else 0     # Windows：子进程不弹黑色控制台窗口
 
 
+# Windows 上插着、但 adb 看不到的手机：按 USB 厂商号认品牌，给对应的驱动 / 开关提示（#57 #58 #65 #118 等）。
+USB_VENDORS = {"04E8": "三星", "12D1": "华为", "339B": "荣耀", "2717": "小米", "22D9": "OPPO / 一加 / realme",
+               "2A70": "一加", "2D95": "vivo / iQOO", "18D1": "Google", "2A45": "魅族", "19D2": "中兴 / 努比亚",
+               "22B8": "摩托罗拉", "0B05": "华硕", "17EF": "联想", "05C6": "高通方案"}
+DRIVER_HINT = {
+    "三星": "Windows 要先装三星官方的 Samsung Android USB Driver，装好后重新插线。",
+    "华为": "开发者选项里同时打开「仅充电模式下允许 ADB 调试」。驱动可装华为手机助手获取，装好后退出手机助手再用本工具。"
+            "已升级 HarmonyOS NEXT（5.0 及以上，原生鸿蒙）的机型不支持 adb。",
+    "荣耀": "开发者选项里同时打开「仅充电模式下允许 ADB 调试」。驱动可装荣耀手机助手获取，装好后退出手机助手再用本工具。",
+}
+
+
+def usb_phones():
+    """只读：Windows 设备管理器里的手机 USB 设备。返回 [(品牌, 设备名, 状态, 是否 ADB 接口)]；查不到返回空。"""
+    if not IS_WIN:
+        return []
+    script = ("[Console]::OutputEncoding = [Text.Encoding]::UTF8; Get-PnpDevice -PresentOnly | Where-Object { $_.InstanceId -match '^USB\\\\VID_(" + "|".join(USB_VENDORS) + ")' } | "
+              "ForEach-Object { $_.InstanceId + '|' + $_.FriendlyName + '|' + $_.Status + '|' + $_.Class }")
+    try:
+        out = subprocess.run(["powershell", "-NoProfile", "-Command", script], capture_output=True, text=True,
+                             encoding="utf-8", errors="replace", timeout=8, creationflags=NOWIN).stdout
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+    found = []
+    for line in out.splitlines():
+        parts = (line.split("|") + ["", "", "", ""])[:4]
+        m = re.match(r"USB\\VID_([0-9A-F]{4})", parts[0], re.I)
+        if m:
+            adb = bool(re.search(r"adb|android", parts[1] + " " + parts[3], re.I))
+            found.append((USB_VENDORS.get(m.group(1).upper(), "安卓"), parts[1], parts[2], adb))
+    return found
+
+
+def usb_hint(found):
+    """把设备管理器的结果说成一句人话；没有手机设备时返回空。"""
+    if not found:
+        return ""
+    brand = found[0][0]
+    adb = [f for f in found if f[3]]
+    if adb and any(f[2].upper() != "OK" for f in adb):
+        head = f"电脑识别到{brand}手机的调试接口，但驱动没有装好。"
+    elif adb:
+        head = f"电脑识别到{brand}手机的调试接口，但 adb 没连上：请退出手机助手类软件和模拟器后重新插线。"
+    else:
+        head = f"电脑识别到{brand}手机，但没有调试接口：手机上的「USB 调试」还没打开，或没点「允许 USB 调试」。"
+    return head + DRIVER_HINT.get(brand, "")
+
+
+def other_adb():
+    """电脑上正在运行的其他 adb（手机助手、模拟器自带）。它们会和本工具抢连接（#126 #140 运行中掉线）。"""
+    try:
+        if IS_WIN:
+            out = subprocess.run(["powershell", "-NoProfile", "-Command",
+                                  "[Console]::OutputEncoding = [Text.Encoding]::UTF8; Get-Process | Where-Object { $_.ProcessName -match 'adb' } | ForEach-Object { $_.Path }"],
+                                 capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=8,
+                                 creationflags=NOWIN).stdout
+        else:
+            out = subprocess.run(["ps", "-axo", "comm="], capture_output=True, text=True, timeout=5).stdout
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+    paths = {line.strip() for line in out.splitlines() if re.search(r"adb", os.path.basename(line.strip()), re.I)}
+    return sorted(paths)
+
+
+def win_clipboard(text):
+    """直接写 Unicode 剪贴板。以前经 PowerShell 管道，中文 Windows 按 GBK 解码，粘贴出来是乱码（#33 #50 #128）。"""
+    import ctypes
+    from ctypes import wintypes
+    user32 = ctypes.WinDLL("user32", use_last_error=True)
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    user32.OpenClipboard.argtypes = [wintypes.HWND]
+    user32.SetClipboardData.argtypes = [wintypes.UINT, wintypes.HANDLE]
+    user32.SetClipboardData.restype = wintypes.HANDLE
+    kernel32.GlobalAlloc.argtypes = [wintypes.UINT, ctypes.c_size_t]
+    kernel32.GlobalAlloc.restype = wintypes.HGLOBAL
+    kernel32.GlobalLock.argtypes = [wintypes.HGLOBAL]
+    kernel32.GlobalLock.restype = wintypes.LPVOID
+    kernel32.GlobalUnlock.argtypes = [wintypes.HGLOBAL]
+    kernel32.GlobalFree.argtypes = [wintypes.HGLOBAL]
+    data = text.encode("utf-16-le") + b"\0\0"
+    for _ in range(20):                       # 别的程序可能正占着剪贴板
+        if user32.OpenClipboard(None):
+            break
+        time.sleep(0.05)
+    else:
+        raise OSError("剪贴板被占用")
+    try:
+        user32.EmptyClipboard()
+        handle = kernel32.GlobalAlloc(0x0002, len(data))    # GMEM_MOVEABLE
+        pointer = kernel32.GlobalLock(handle)
+        ctypes.memmove(pointer, data, len(data))
+        kernel32.GlobalUnlock(handle)
+        if not user32.SetClipboardData(13, handle):           # CF_UNICODETEXT
+            kernel32.GlobalFree(handle)
+            raise OSError("写剪贴板失败")
+    finally:
+        user32.CloseClipboard()
+
+
 # 营销渠道里混进来的服务类渠道：默认不勾
 SERVICE = re.compile(r"TETHERING|热点|ENVELOPE|红包|Auto lock|盗窃|hotspot|drive_mode|驾驶|securitypermission|权限建议|直播|ig_live|youtube\t2\t|警告|告警|实时活动|赛事|护眼|清理加速|普通通知|推送通知|个性化提示|\t其他$", re.I)
 
@@ -126,6 +237,7 @@ class Api:
         self.dl = {"state": "idle", "pct": 0, "msg": ""}
         self.last_status = None
         self.last_error = None
+        self.last_devices = ""
 
     # ----- 基础 -----
     def env(self):
@@ -185,6 +297,7 @@ class Api:
         except Exception as e:
             return {"error": str(e), "list": []}
         res = []
+        self.last_devices = out
         for line in out.splitlines()[1:]:
             if not line.strip():
                 continue
@@ -204,6 +317,10 @@ class Api:
                     pass
             res.append(d)
         return {"error": None, "list": res}
+
+    def usb_hint(self):
+        """没有手机出现时调用：只读设备管理器，给出驱动 / 开关提示。"""
+        return usb_hint(usb_phones())
 
     def status(self, serial):
         out, err, rc = self._run("run.py", "-s", serial, "status-json", timeout=90)
@@ -402,6 +519,15 @@ class Api:
             v = f"adb 出错：{e}"
         lines.append(f"- adb：{v}")
         st, serial = self.last_status, (self.job or {}).get("serial")
+        rows = [l.split()[1] for l in self.last_devices.splitlines()[1:] if len(l.split()) > 1]
+        lines.append(f"- adb 设备：{len(rows)} 台" + (f"（{'、'.join(rows)}）" if rows else ""))
+        others = [o for o in other_adb() if not self.adb or os.path.normcase(o) != os.path.normcase(self.adb)]
+        if others:
+            lines.append(f"- 其他正在运行的 adb：{'；'.join(others)}")
+        if not rows:
+            hint = usb_hint(usb_phones())
+            if hint:
+                lines.append(f"- USB：{hint}")
         if st and "info" in st:
             i = st["info"]
             nm = i.get("name") or i.get("model")
@@ -411,7 +537,8 @@ class Api:
                       f"- 系统：{i.get('os') or i.get('build')}（{i.get('build')}），Android {i.get('android')}",
                       f"- 机型脚本：{st.get('recipe') or '无'}"
                       + (f"（录制版本 {st.get('recipe_build')}，{'一致' if st.get('recipe_ok') else '不一致'}）" if st.get('recipe') else ""),
-                      f"- 折叠屏展开：{'是' if st.get('fold_open') else '否'}；锁屏：{'是' if st.get('locked') else '否'}"]
+                      f"- 折叠屏展开：{'是' if st.get('fold_open') else '否'}；锁屏：{'是' if st.get('locked') else '否'}"
+                      + ("；电脑点击被拒（未开 USB 调试安全设置）" if st.get("input_blocked") else "")]
         else:
             lines.append("- 手机：还没检测")
         j = self.job
@@ -435,8 +562,7 @@ class Api:
     def copy_text(self, text):
         try:
             if IS_WIN:
-                subprocess.run(["powershell", "-NoProfile", "-Command", "$input | Set-Clipboard"], input=text,
-                               text=True, encoding="utf-8", creationflags=NOWIN, timeout=10)
+                win_clipboard(text)
             else:
                 subprocess.run(["pbcopy"], input=text, text=True, encoding="utf-8", timeout=10)
             return True

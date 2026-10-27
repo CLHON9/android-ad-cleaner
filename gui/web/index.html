@@ -184,10 +184,16 @@ async function refreshDevices(){
   const box = $("#devbox"); if (!box) return;
   if (r.error && r.error !== "no-adb"){ box.innerHTML = `<div class="note bad">${esc(r.error)}</div>`; return; }
   if (!r.list.length){
+    if (!S.usbAt || Date.now() - S.usbAt > 8000){     // 只读设备管理器，较慢，8 秒查一次
+      S.usbAt = Date.now();
+      api.usb_hint().then(h => { S.usbHint = h; const el = $("#usbhint"); if (el){ el.textContent = h; el.classList.toggle("hide", !h); } });
+    }
     box.innerHTML = `<div class="card"><div class="row"><span class="spin"></span><span>正在等待手机……插上数据线后这里会出现你的手机。</span></div>
-      <p class="lead" style="margin:12px 0 0">一直没有出现：换可传数据的数据线，确认 USB 调试授权；Windows 还需检查手机 USB 驱动。能连上但没有机型脚本，是另一种情况。仅支持通过 adb 连接的安卓设备，原生鸿蒙的 HDC 连接暂不支持。</p></div>`;
+      <div id="usbhint" class="note warn ${S.usbHint ? "" : "hide"}" style="margin-top:12px">${esc(S.usbHint || "")}</div>
+      <p class="lead" style="margin:12px 0 0">一直没有出现：换可传数据的数据线，确认 USB 调试授权；退出电脑上的手机助手类软件和安卓模拟器。荣耀 / 华为还要打开「仅充电模式下允许 ADB 调试」；三星在 Windows 上要装三星 USB 驱动。仅支持通过 adb 连接的安卓设备，原生鸿蒙（HarmonyOS NEXT）暂不支持。</p></div>`;
     $("#tutbox").open = true; return;
   }
+  S.usbHint = "";
   box.innerHTML = r.list.map(d => {
     let tag, btn = "";
     if (d.state === "device"){ tag = `<span class="tag ok">已连接</span>`; btn = `<button class="btn" onclick='pick(${JSON.stringify(d)})'>用这台</button>`; }
@@ -210,6 +216,7 @@ async function showDetect(){
   const qa = st.quickapps, qaOff = qa.filter(q => q.closed).length;
   const warns = [];
   if (st.locked) warns.push(`<div class="note warn">手机锁屏了。请解锁手机并保持亮屏，然后点「重新检测」。</div>`);
+  if (st.input_blocked) warns.push(`<div class="note bad">电脑发出的点击被手机拒绝了。小米 / Redmi / POCO 要在「开发者选项」里再打开「USB 调试（安全设置）」（需插 SIM 卡、登录小米账号），打开后点「重新检测」。不开它，自动关开关和营销通知都会失败，中途还会锁屏。</div>`);
   const foldBlock = st.fold_open && st.steps.length > 0;
   if (st.fold_open) warns.push(foldBlock
     ? `<div class="note warn">这是展开的折叠屏。展开后是左右分栏，自动关 App 开关会找错位置。请合上手机用外屏，然后点「重新检测」。</div>`
@@ -226,7 +233,7 @@ async function showDetect(){
     ${st.recipe && !st.recipe_ref ? "" : `<div class="note info" style="margin-top:14px">这个型号还没有机型脚本：营销通知、快应用、广告组件可以自动处理；各 App 里的广告开关要照<a href="#" onclick="openChecklist();return false">${esc(checklistName(i.brand))}手动清单</a>关${st.recipe_ref ? `，也可以在下一步试用同品牌别的机型录的参考脚本` : ""}。</div>`}
     ${st.recipe && !st.recipe_ref && !st.recipe_ok ? `<div class="note warn" style="margin-top:14px">机型脚本是按 ${esc(st.recipe_build)} 录的，这台是 ${esc(i.os || i.build)}。会用安全模式跑：只关脚本里点名的开关，找不到入口的步骤跳过，不会乱点。</div>` : ""}
     <div class="actions"><button class="btn plain" onclick="showConnect()">换一台</button><button class="btn plain" onclick="showDetect()">重新检测</button>
-    <button class="btn" ${st.locked || foldBlock ? "disabled" : ""} onclick="showChoose()">下一步</button></div>`;
+    <button class="btn" ${st.locked || foldBlock || st.input_blocked ? "disabled" : ""} onclick="showChoose()">下一步</button></div>`;
 }
 
 const CHECKLIST = {OPPO: "OPPO-ColorOS.md", ONEPLUS: "OPPO-ColorOS.md", REALME: "OPPO-ColorOS.md", HONOR: "荣耀-MagicOS.md",
@@ -405,10 +412,17 @@ async function sendFeedback(){
   const base = `${REPO}/issues/new?template=${tpl}&title=${encodeURIComponent(title)}&body=`;
   let url = base + encodeURIComponent(body);
   const msg = $("#fbmsg");
-  if (url.length > 7500){      // 网址太长浏览器会截断：完整内容放剪贴板
+  if (url.length > 7500){      // 网址太长浏览器会截断：完整内容放剪贴板，网址里留摘要
     await api.copy_text(body);
-    url = base + encodeURIComponent(`## 描述\n\n${text}\n\n## 诊断信息\n\n（内容较长，已复制到剪贴板，请在这里粘贴）\n`);
-    msg.textContent = "诊断信息较长，已复制到剪贴板。打开的页面里，在「诊断信息」下面粘贴即可。";
+    // 以前网址里只有一句「请粘贴」，很多反馈没粘贴，只剩标题。现在先放手机、系统、各步结果和日志末尾。
+    const head = diag.split("<details>")[0].trim();
+    const tail = (diag.match(/```text\n([\s\S]*?)\n```/) || ["", ""])[1].split("\n").filter(l => l.trim());
+    const brief = n => `## 描述\n\n${text}\n\n## 诊断信息\n\n${head}\n\n最近的日志（节选）：\n\n\`\`\`text\n${tail.slice(-n).join("\n")}\n\`\`\`\n\n（完整诊断已复制到剪贴板，可以粘贴在这里）\n`;
+    let n = 40;
+    url = base + encodeURIComponent(brief(n));
+    while (url.length > 7500 && n > 0){ n -= 5; url = base + encodeURIComponent(brief(n)); }
+    if (url.length > 7500) url = base + encodeURIComponent(`## 描述\n\n${text}\n\n## 诊断信息\n\n（内容较长，已复制到剪贴板，请在这里粘贴）\n`);
+    msg.textContent = "已在网址里带上诊断摘要，完整诊断复制到了剪贴板。打开的页面里，可以在末尾粘贴完整内容。";
   } else {
     msg.textContent = "已在浏览器里打开 GitHub。登录后检查一下内容，点「Submit new issue」提交。";
   }

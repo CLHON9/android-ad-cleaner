@@ -19,7 +19,8 @@ for _st in (sys.stdout, sys.stderr):
         pass
 import uiautomator2 as u2
 from ui_session import connect
-from troubleshooting import UI_RECOVERY, accessibility_summary
+from troubleshooting import UI_RECOVERY, XIAOMI_INPUT, accessibility_summary, input_blocked
+import adb_link
 
 BOUNDS = re.compile(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]")
 DISMISS = ("以后再说", "暂不更新", "暂不", "取消", "我知道了", "跳过", "禁止", "不再提示")
@@ -61,15 +62,34 @@ class Phone:
             raise RuntimeError("手机读屏服务（UiAutomation）启动失败，本次未点击开关。"
                                f"\n{accessibility_summary(serial)}\n{UI_RECOVERY}\n"
                                f"原始异常：{type(e).__name__}: {e}") from e
+        self.serial, self.lost = serial, False
+        self._shell, self.d.shell = self.d.shell, self._resilient_shell
         try:
             self.d.settings["operation_delay"] = (0, 0)
             self.W, self.H = self.d.window_size()
+            # 小米没开「USB 调试（安全设置）」时能读不能点：先探一下，别跑几分钟全是「没找到」。
+            if input_blocked(self.d.shell("input keyevent 0").output):
+                raise RuntimeError("INPUT_BLOCKED：系统拒绝了电脑发出的点击，本次未点击开关。\n" + XIAOMI_INPUT)
         except BaseException:
             self.d.close()
             raise
         self.log = log
         self.changed = []          # (页面, 标题) 记录本次关掉的
         self.miss = 0              # 本段已经没找到几次；>0 说明路径对不上，后面只看当前屏、不再翻页找
+
+    def _resilient_shell(self, *args, **kwargs):
+        """手机短暂掉线（另一个 adb 服务重启、接口抖动）等它回来重试一次；仍不在就整段停下。"""
+        if self.lost:
+            raise adb_link.lost()
+        try:
+            return self._shell(*args, **kwargs)
+        except Exception as e:
+            if not adb_link.lib_gone(str(e)):
+                raise
+            if not adb_link.wait_for(self.serial):
+                self.lost = True
+                raise adb_link.lost(str(e)) from e
+            return self._shell(*args, **kwargs)
 
     def close(self):
         self.d.close()
@@ -203,8 +223,9 @@ class Phone:
         return rows
 
     def locked(self):
+        # 只认 isKeyguardShowing=true。HyperOS 3 这一行还有其他 =true 字段，以前整行找 "true" 会误报锁屏（#115）。
         out = self.d.shell("dumpsys window | grep -m1 isKeyguardShowing").output
-        return "true" in out
+        return bool(re.search(r"isKeyguardShowing[=:]\s*true", out))
 
     def sig(self):
         return "|".join(t for t, _, _ in self.texts())
@@ -249,7 +270,9 @@ class Phone:
             raise RuntimeError("屏幕方向或尺寸已变化，停止使用旧坐标；请重新读取页面")
         if not (0 <= x < self.W and 0 <= y < self.H):
             raise RuntimeError("点击坐标在屏幕外，未操作")
-        self.d.shell(f"input swipe {x} {y} {x} {y} 80")   # 有的 App 吞 input tap
+        out = self.d.shell(f"input swipe {x} {y} {x} {y} 80").output   # 有的 App 吞 input tap
+        if input_blocked(out):
+            raise RuntimeError("系统拒绝了电脑发出的点击。" + XIAOMI_INPUT)
 
     def scroll(self, frac=0.45, up=False):
         """按下-移动-停 0.12 秒-松开：没有惯性，翻多少是多少，约 0.45 秒。"""
@@ -619,6 +642,9 @@ class Phone:
             self.d.app_stop(pkg)
             result = self.d.shell(f"monkey -p {pkg} -c android.intent.category.LAUNCHER 1")
         if result.exit_code or re.search(r"Error|Exception|No activities found|monkey aborted", result.output, re.I):
+            # 同品牌参考脚本里的 App 本机可能没装或换了包名（#87 #165），说清楚，别报成打开失败。
+            if "package:" not in self.d.shell(f"pm path {pkg}").output:
+                raise RuntimeError(f"本机没有安装 {pkg}，跳过本段")
             raise RuntimeError(f"无法打开 {pkg}：{result.output.strip()[-250:]}")
         deadline = time.monotonic() + 5
         expected = foreground or pkg
@@ -717,7 +743,11 @@ def execute(p, cmd, rest):
             os.environ["AAC_REF"] = "1"
             print(f"⚠ 机型脚本是按 {m.group(1)} 录的，这台是 {osv or build}：用安全模式跑（只关点名的开关），没找到的段会快速跳过")
         t = time.time()
-        exec(src, g)
+        try:
+            exec(src, g)
+        except adb_link.DeviceLost as e:
+            print(f"\n✗ {e}\n已停止：关了 {len(p.changed)} 个，{time.time()-t:.0f} 秒", flush=True)
+            sys.exit(1)
         print(f"\n机型脚本跑完：关了 {len(p.changed)} 个，{time.time()-t:.0f} 秒")
         import json, datetime
         logdir = os.environ.get("AAC_BACKUPS") or os.path.dirname(os.path.abspath(rest[0]))
