@@ -10,7 +10,8 @@
 - adb 掉线：`tool/adb_link.py`，等 `wait-for-device` 15 秒重试一次，仍断开就退出本步骤；不再把空输出当成功。营销通知一步也设插电常亮。客户端拒用低于 1.0.41 的 adb；Windows 等不到手机时只读查询设备管理器。
 - Windows 剪贴板改 ctypes Unicode；反馈网址带诊断摘要。
 - Mac Intel：旧 `gui/.venv-x86` 用了 Homebrew Python（minos 26.0），已改名 `gui/.venv-x86-brew-old`；`build_mac.sh` 只用 uv managed Python，并扫描包内文件最低系统版本，高于 11 即失败。
-- 155 项回归通过；Android 15 模拟器 scan / off / on 通过。荣耀、三星、华为、ColorOS 17 没有真机，依据是反馈者的实测记录或同结构推断，以 docs/09 的「待复测」为准。
+- 真机（无线调试）：Find X10 Pro Max / ColorOS 17（Gio 的手机，规矩见 ~/oppo-debloat/CLAUDE.md，收尾插电常亮改回 0）与荣耀 PNM-AN10 / MagicOS 10（插电常亮原值 7）通知渠道来回测试通过，测试后回读一致。真机发现并修复：列表卡片里的 ✕ 不点、「不同意」算拒绝按钮、`AutoCompleteTextView` 搜索框。
+- 159 项回归通过；Android 15 模拟器 scan / off / on 通过。三星、华为、荣耀内联布局与旧版仍无真机，以 docs/09 的「待复测」为准。
 
 ## 2026-10-26 用户反馈改进（已随 0.2.4 发布）
 

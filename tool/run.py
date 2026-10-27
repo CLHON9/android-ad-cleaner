@@ -266,6 +266,7 @@ def set_quickapp_service(serial, restore=False):
 def quickapps(serial):
     """装着的快应用组件，带状态。"""
     ev = sh(serial, "dumpsys usagestats")
+    disabled = set(re.findall(r"^package:(\S+)", sh(serial, "pm list packages --user 0 -d"), re.M))
     out = []
     for pkg, name, brand, tested in QUICKAPP:
         if not installed(serial, pkg):
@@ -276,7 +277,7 @@ def quickapps(serial):
         out.append({
             "pkg": pkg, "name": name, "brand": brand, "tested": tested,
             "suspended": is_suspended,
-            "closed": is_suspended or switch == "0",
+            "closed": is_suspended or switch == "0" or pkg in disabled,   # 以前手动 disable-user 的也算关闭
             "method": "setting" if switch is not None else "suspend",
             "service_switch": switch,
             "running": bool(sh(serial, f"pidof {pkg}") or sh(serial, f"pidof {pkg}:provider")),

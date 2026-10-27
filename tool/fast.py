@@ -23,9 +23,11 @@ from troubleshooting import UI_RECOVERY, XIAOMI_INPUT, accessibility_summary, in
 import adb_link
 
 BOUNDS = re.compile(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]")
-DISMISS = ("以后再说", "暂不更新", "暂不", "取消", "我知道了", "跳过", "禁止", "不再提示")
+DISMISS = ("以后再说", "暂不更新", "暂不", "取消", "我知道了", "跳过", "禁止", "不再提示", "不同意")
 CONFIRM = ("确定", "关闭", "仍要关闭", "确认关闭", "确认", "继续关闭", "关闭推荐", "仍然关闭")
 PERMISSION_CONTROLLERS = {"com.android.permissioncontroller", "com.google.android.permissioncontroller"}
+# 输入框：荣耀 MagicOS 10（PNM-AN10 10.0.0.102）设置搜索框是 AutoCompleteTextView，类名里没有 EditText
+EDIT = re.compile(r"EditText|AutoCompleteTextView")
 
 
 def bounds(n):
@@ -330,11 +332,22 @@ class Phone:
                     self.say("  · 已拒绝运行时权限申请，未授予权限")
                     return "拒绝权限"
             return None
+        parent = {c: p for p in root.iter() for c in p}
+
+        def in_list(n):
+            # 列表里卡片的 ✕（ColorOS 17 隐私页「关闭提示」）点了会打开别的页面；广告弹窗的 ✕ 在列表外的浮层里。
+            n = parent.get(n)
+            while n is not None:
+                if n.get("scrollable") == "true":
+                    return True
+                n = parent.get(n)
+            return False
+
         for n in root.iter("node"):
             if n.get("clickable") != "true" or n.get("package") == "com.android.systemui":
                 continue
             key = (n.get("content-desc") or "") + " " + (n.get("resource-id") or "")
-            if self.CLOSE.search(key) and not (n.get("text") or "").strip():
+            if self.CLOSE.search(key) and not (n.get("text") or "").strip() and not in_list(n):
                 l, t, r, b = bounds(n)
                 if 0 < r - l < self.W * 0.3 and 0 < b - t < self.H * 0.12:   # 小图标，不是整行
                     self.click((l + r) // 2, (t + b) // 2); time.sleep(0.6)
@@ -453,7 +466,7 @@ class Phone:
                 break
             time.sleep(0.2)
         start = self.focus()
-        done, slow, checked = 0, False, set()
+        done, slow, checked, kept = 0, False, set(), set()
         for _ in range(max_screens):
             root = self.tree()
             targets = []
@@ -468,6 +481,7 @@ class Phone:
                 if only is not None and not any(k in t for k in only) and not (want and TRACK_WORDS.search(t)):
                     continue                              # 「限制广告跟踪」这类保护开关：不在名单里也要打开
                 if os.environ.get("AAC_REF") and only is None and not want:
+                    kept.add(t)
                     continue                              # 参考脚本（同品牌别的机型录的）：不做整页全关
                 checked.add(t)
                 if c == want:
@@ -518,12 +532,16 @@ class Phone:
             if not self.scroll_more():
                 break
         if page:
-            self.say(f"  · {page}：核对 {len(checked)} 项，调整 {done} 项" + ("（本页未找到目标开关）" if not checked else ""))
+            if kept and not checked:
+                # 页面找到了，只是安全模式不整页全关；不能写成「未找到」
+                self.say(f"  · {page}：安全模式不做整页全关，本页 {len(kept)} 个开关未改动，需要时请按清单手动关")
+            else:
+                self.say(f"  · {page}：核对 {len(checked)} 项，调整 {done} 项" + ("（本页未找到目标开关）" if not checked else ""))
         return done
 
     def focused_text(self):
         for n in self.tree().iter("node"):
-            if n.get("focused") == "true" and "EditText" in (n.get("class") or "") and self.on_screen(n):
+            if n.get("focused") == "true" and EDIT.search(n.get("class") or "") and self.on_screen(n):
                 return n.get("text") or ""
         return None
 
@@ -551,7 +569,7 @@ class Phone:
 
         # 直接对已确认的输入框发有超时的 RPC，不启动无法取消的后台线程。
         # 旧线程超时后仍会等控件出现，可能在下一页补打文字；也不能退回任意 focused 节点（键盘也有）。
-        selector = self.d(className="android.widget.EditText", focused=True).selector
+        selector = self.d(classNameMatches=r".*(EditText|AutoCompleteTextView)$", focused=True).selector
         def set_text():
             self.d.jsonrpc.setText(selector, kw, http_timeout=timeout)
         if attempt(set_text):
@@ -573,7 +591,7 @@ class Phone:
     def edit_ready(self):
         """搜索页打开了：屏幕上有获得焦点的输入框。"""
         for n in self.tree().iter("node"):
-            if "EditText" in (n.get("class") or "") and n.get("focused") == "true" and self.on_screen(n):
+            if EDIT.search(n.get("class") or "") and n.get("focused") == "true" and self.on_screen(n):
                 return True
         return False
 
@@ -613,7 +631,7 @@ class Phone:
         t0, xy = time.time(), None
         while time.time() - t0 < 3:
             for t, (l, tp, r, b), n in self.texts():
-                if t == (entry or kw) and "EditText" not in n.get("class", ""):
+                if t == (entry or kw) and not EDIT.search(n.get("class", "")):
                     xy = ((l + r) // 2, (tp + b) // 2)
                     break
             if xy:

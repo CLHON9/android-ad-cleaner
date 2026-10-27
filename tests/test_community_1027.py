@@ -236,6 +236,56 @@ class LockedChannelTests(unittest.TestCase):
         p.click.assert_not_called()
 
 
+class DismissTests(unittest.TestCase):
+    def phone(self, xml):
+        p = fast.Phone.__new__(fast.Phone)
+        p.W, p.H, p.log = 1272, 2772, False
+        p.d = Mock()
+        p.tree = Mock(return_value=ET.fromstring(xml))
+        p.focus = Mock(return_value="com.oplus.securitypermission/.privacy.PrivacySecuritySettingsDashboardActivity")
+        p.click = Mock()
+        return p
+
+    def test_close_icon_inside_list_card_is_not_clicked(self):
+        # Find X10 Pro Max / ColorOS 17 实测：隐私页卡片的「关闭提示」点了会打开权限建议须知，后面的入口全找不到
+        p = self.phone('''<hierarchy><node class="androidx.recyclerview.widget.RecyclerView" scrollable="true" bounds="[0,0][1272,2772]">
+          <node text="有 4 个应用存在过度授权" bounds="[100,577][1000,661]"/>
+          <node content-desc="关闭提示" resource-id="com.oplus.securitypermission:id/close" clickable="true" bounds="[1076,577][1160,661]"/>
+        </node></hierarchy>''')
+        with patch.object(fast.time, "sleep"):
+            self.assertIsNone(p.dismiss())
+        p.click.assert_not_called()
+
+    def test_popup_close_icon_outside_list_is_still_clicked(self):
+        p = self.phone('''<hierarchy><node class="androidx.recyclerview.widget.RecyclerView" scrollable="true" bounds="[0,0][1272,2772]">
+          <node text="首页" bounds="[100,300][600,400]"/></node>
+          <node class="android.widget.FrameLayout" bounds="[100,600][1172,2000]">
+            <node content-desc="关闭" clickable="true" bounds="[1050,620][1150,720]"/></node></hierarchy>''')
+        with patch.object(fast.time, "sleep"):
+            self.assertEqual(p.dismiss(), "✕")
+        p.click.assert_called_once_with(1100, 670)
+
+    def test_user_agreement_is_declined(self):
+        p = self.phone('''<hierarchy><node>
+          <node text="用户须知" bounds="[100,900][1172,1000]"/>
+          <node text="不同意" bounds="[100,2400][600,2500]"/>
+          <node text="同意并使用" bounds="[672,2400][1172,2500]"/></node></hierarchy>''')
+        with patch.object(fast.time, "sleep"):
+            self.assertEqual(p.dismiss(), "不同意")
+        p.click.assert_called_once_with(350, 2450)
+
+
+class SearchBoxTests(unittest.TestCase):
+    def test_autocomplete_search_box_counts_as_input(self):
+        # 荣耀 PNM-AN10 10.0.0.102 真机：设置搜索框是 AutoCompleteTextView，以前判成「搜索框没打开」
+        p = fast.Phone.__new__(fast.Phone)
+        p.W, p.H = 1080, 2420
+        p.tree = Mock(return_value=ET.fromstring('''<hierarchy><node class="android.widget.AutoCompleteTextView"
+            focused="true" text="广告" bounds="[138,509][930,629]"/></hierarchy>'''))
+        self.assertTrue(p.edit_ready())
+        self.assertEqual(p.focused_text(), "广告")
+
+
 class LockScreenTests(unittest.TestCase):
     def test_other_true_fields_on_the_line_are_not_a_lock(self):
         # #115 跟帖：HyperOS 3 全程解锁，30 个渠道都被判成「手机锁屏了」
