@@ -275,6 +275,25 @@ class DismissTests(unittest.TestCase):
         p.click.assert_called_once_with(350, 2450)
 
 
+class ScanWordingTests(unittest.TestCase):
+    def test_overlay_notice_is_not_a_marketing_candidate(self):
+        # #115：小米「“钱包”正在其他应用的上层显示内容」被当成营销渠道，整步报失败
+        self.assertTrue(chan.SKIP.search("“钱包”正在其他应用的上层显示内容"))
+        self.assertFalse(chan.SKIP.search("内容资讯"))
+
+    def test_off_names_channels_still_on(self):
+        items = [("com.example", "promo", "营销推广")]
+        data = {("com.example", "promo"): ("营销推广", 3, False)}
+        with patch.object(chan, "load", return_value=items), patch.object(chan, "parse", return_value=(data, {})), \
+             patch.object(chan, "Phone"), patch.object(chan, "keep_awake", return_value=None), \
+             patch.object(chan, "toggle", return_value="点击后渠道状态未改变"), \
+             patch.object(sys, "argv", ["chan_fast.py", "-s", "test", "off", "x.tsv"]), \
+             contextlib.redirect_stdout(io.StringIO()) as out:
+            with self.assertRaises(SystemExit):
+                chan.main()
+        self.assertIn("仍开着：营销推广", out.getvalue())
+
+
 class SearchBoxTests(unittest.TestCase):
     def test_autocomplete_search_box_counts_as_input(self):
         # 荣耀 PNM-AN10 10.0.0.102 真机：设置搜索框是 AutoCompleteTextView，以前判成「搜索框没打开」

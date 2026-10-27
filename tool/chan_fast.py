@@ -41,7 +41,8 @@ class ShellPhone:
 
 KW = re.compile(r"营销|活动|推荐|推广|热点|热门|资讯|新闻|福利|优惠|特惠|精选|精彩|运营|促销|红包|直播|种草|内容|头条|猜你|好物|权益|会员|签到|广告|recommend|promo|market|deal|news|topstory|upsell|offer", re.I)
 SKIP = re.compile(r"下载|更新|安装|上传|订单|物流|快递|交易|支付|付款|\bpayments?\b|账号|安全|验证|通话|来电|消息|聊天|私信|评论|互动|提醒|闹钟|日程|天气预警|系统|前台|后台|服务运行|播放|媒体"
-                  r"|热点和网络共享|智能热点|红包助手|盗窃|驾驶状态|权限建议|运营商|警告|告警|实时活动|赛事|护眼", re.I)
+                  r"|热点和网络共享|智能热点|红包助手|盗窃|驾驶状态|权限建议|运营商|警告|告警|实时活动|赛事|护眼"
+                  r"|上层显示", re.I)   # 「“钱包”正在其他应用的上层显示内容」是悬浮窗提示，名字带「内容」被误选（#115）
 
 
 def truncated(cid):
@@ -414,7 +415,10 @@ def main():
     for pk, cid, label in items:
         st = state(d, app_off, pk, cid)
         protected = protected_channel(d.get((pk, cid), ("", 0, False))[0], cid, label)
-        if st == "ON" and not protected: bad += 1
+        if st == "ON" and not protected:
+            bad += 1
+            if cmd == "off":
+                print(f"  仍开着：{label}")       # 以前只给数量，看不出是哪一个（#115）
         if cmd == "verify":
             print(f"{st:4} {label}" + ("（受保护，不参与营销关闭）" if protected else ""))
     print(f"营销渠道仍开着: {bad} 个")
