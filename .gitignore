@@ -10,3 +10,6 @@ gui/ChineseSimplified.isl
 发布/
 recipes/zztest-*/
 recipes/*/run-log.txt
+# 本机私有：运维记录、服务端部署代码
+CLAUDE.local.md
+.private/

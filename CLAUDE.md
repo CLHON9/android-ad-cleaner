@@ -10,13 +10,17 @@
 - adb 掉线：`tool/adb_link.py`，等 `wait-for-device` 15 秒重试一次，仍断开就退出本步骤；不再把空输出当成功。营销通知一步也设插电常亮。客户端拒用低于 1.0.41 的 adb；Windows 等不到手机时只读查询设备管理器。
 - Windows 剪贴板改 ctypes Unicode；反馈网址带诊断摘要。
 - Mac Intel：旧 `gui/.venv-x86` 用了 Homebrew Python（minos 26.0），已改名 `gui/.venv-x86-brew-old`；`build_mac.sh` 只用 uv managed Python，并扫描包内文件最低系统版本，高于 11 即失败。
-- 真机（无线调试）：Find X10 Pro Max / ColorOS 17（Gio 的手机，规矩见 ~/oppo-debloat/CLAUDE.md，收尾插电常亮改回 0）与荣耀 PNM-AN10 / MagicOS 10（插电常亮原值 7）通知渠道来回测试通过，测试后回读一致。真机发现并修复：列表卡片里的 ✕ 不点、「不同意」算拒绝按钮、`AutoCompleteTextView` 搜索框。
-- vivo X300 Ultra（OriginOS 6，无线调试）：总页与渠道页同 Activity，靠顶栏标题区分，App 名在总页找到渠道行的同一次读屏里记录。**用户要求：测试不要碰 Edge（他把默认浏览器改成了 Edge，普通用户也不装），用支付宝 / 淘宝 / 系统自带应用测。**
+- 真机（无线调试）：一台 ColorOS 17 与荣耀 MagicOS 10 通知渠道来回测试通过，测试后回读一致。真机发现并修复：列表卡片里的 ✕ 不点、「不同意」算拒绝按钮、`AutoCompleteTextView` 搜索框。
+- vivo OriginOS 6：总页与渠道页同 Activity，靠顶栏标题区分，App 名在总页找到渠道行的同一次读屏里记录。
 - 162 项回归通过；Android 15 模拟器 scan / off / on 通过。三星、华为、荣耀内联布局与旧版仍无真机，以 docs/09 的「待复测」为准。
+
+## 错误日志上报（客户端待发 0.2.5）
+
+- 用户说明见 [docs/12](docs/12-错误日志上报.md)。服务器、数据库、部署与运维信息只记在本机 `CLAUDE.local.md` 和 `.private/`，不进仓库。
 
 ## 发版后上传百度网盘
 
-`gui/upload_baidu.sh [版本]`：从公开的 GitHub Release 下载安装包并核对 SHA256，经 BaiduPCS-Go（`~/.local/bin/BaiduPCS-Go`，机主在自己终端登录过）传到 `/安卓去广告/v<版本>/<平台>/`，附安装说明，生成永久分享链接写进 index.html 的 REL 后自动提交推送。BDUSS / STOKEN 不进仓库和对话。网盘里另有机主 10-24 手动建的 `/去广告/<平台>/`（0.2.0，提取码 1234，浏览量高），脚本不动它。
+`gui/upload_baidu.sh [版本]`：从公开的 GitHub Release 下载安装包并核对 SHA256，经本机已登录的 BaiduPCS-Go 上传，生成分享链接写进 index.html 后提交推送。网盘账号凭证不进仓库和对话。
 
 ## 2026-10-26 用户反馈改进（已随 0.2.4 发布）
 

@@ -5,7 +5,7 @@
 后台：tool/run.py、tool/fast.py、tool/chan_fast.py，以子进程运行，日志实时回传界面。
 打包后没有独立的 Python，子进程用「本程序 --cli 脚本名 参数…」的方式启动。
 """
-import json, os, platform, re, runpy, shutil, subprocess, sys, threading, time, urllib.request, zipfile
+import json, os, platform, re, runpy, shutil, subprocess, sys, threading, time, urllib.error, urllib.request, uuid, zipfile
 from pathlib import Path
 
 APP_NAME = "安卓去广告"
@@ -225,6 +225,27 @@ def win_clipboard(text):
         user32.CloseClipboard()
 
 
+# 错误日志上报：用户预览并确认后发送；说明见 docs/12-错误日志上报.md
+REPORT_URL = "https://supabase.ahuamiao.com/functions/v1/aac-report"
+REPORT_LIMIT = 3            # 每小时最多上报几次（服务器另有按 IP / 安装编号 / 全站的配额）
+PRIVATE = (
+    (re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}"), "<邮箱>"),
+    (re.compile(r"(?<!\d)1[3-9]\d{9}(?!\d)"), "<手机号>"),
+    (re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}(?::\d{1,5})?\b"), "<IP>"),
+    (re.compile(r"(?:/Users/|/home/|[A-Za-z]:\\Users\\)[^/\\\s'\"]+"), "<用户目录>"),
+)
+
+
+def scrub(text, serial=None):
+    """序列号、用户目录、邮箱、手机号、IP 换成占位符；服务器收到后再做一遍。"""
+    for private, replacement in ((serial, "<序列号>"), (os.path.expanduser("~"), "<用户目录>")):
+        if private:
+            text = text.replace(private, replacement).replace(private.replace("\\", "\\\\"), replacement)
+    for pattern, replacement in PRIVATE:
+        text = pattern.sub(replacement, text)
+    return text
+
+
 # 营销渠道里混进来的服务类渠道：默认不勾
 SERVICE = re.compile(r"TETHERING|热点|ENVELOPE|红包|Auto lock|盗窃|hotspot|drive_mode|驾驶|securitypermission|权限建议|直播|ig_live|youtube\t2\t|警告|告警|实时活动|赛事|护眼|清理加速|普通通知|推送通知|个性化提示|\t其他$", re.I)
 
@@ -238,6 +259,7 @@ class Api:
         self.last_status = None
         self.last_error = None
         self.last_devices = ""
+        self.report_times = []
 
     # ----- 基础 -----
     def env(self):
@@ -558,6 +580,74 @@ class Api:
         report = "\n".join(lines)
         home = os.path.expanduser("~")
         return report.replace(home, "<用户目录>").replace(home.replace("\\", "\\\\"), "<用户目录>")
+
+    # ----- 错误日志上报 -----
+    def report_payload(self):
+        """要上报的全部内容。界面原样展示给用户，确认后发送同一份。"""
+        st, j = self.last_status or {}, self.job or {}
+        info = st.get("info") or {}
+        serial = j.get("serial")
+        log = "\n".join(l for l in j.get("lines", []) if l.strip())
+        if self.last_error:
+            log += f"\n\n[最近失败：{self.last_error['operation']}]\n{self.last_error['detail']}"
+        steps = [{"title": scrub(r["title"])[:40], "sec": int(r.get("sec") or 0),
+                  "result": "跳过" if r.get("skipped") else ("成功" if r["rc"] == 0 else "失败")}
+                 for r in j.get("results", [])][:12]
+        return {
+            "client_version": VERSION,
+            "platform": f"{os_name()}（{platform.machine()}）"[:80],
+            "phone_brand": scrub(info.get("brand") or "")[:40],
+            "phone_model": scrub(info.get("name") or info.get("model") or "")[:80],
+            "phone_system": scrub(info.get("os") or info.get("build") or "")[:160],
+            "android": (info.get("android") or "")[:16],
+            "steps": steps,
+            "log": scrub(log, serial)[-20000:],      # 只留末尾；开头是早先成功的步骤
+        }
+
+    def _install_id(self):
+        """第一次上报时随机生成，只用来限频；不取任何设备或电脑标识。"""
+        path = Path(DATA, "install-id")
+        try:
+            value = path.read_text(encoding="utf-8").strip()
+            if uuid.UUID(value).version == 4:
+                return value
+        except (OSError, ValueError):
+            pass
+        value = str(uuid.uuid4())
+        path.write_text(value, encoding="utf-8")
+        return value
+
+    def send_report(self, payload):
+        now = time.time()
+        self.report_times = [t for t in self.report_times if now - t < 3600]
+        if len(self.report_times) >= REPORT_LIMIT:
+            return {"error": f"一小时内最多上报 {REPORT_LIMIT} 次，请稍后再试"}
+        if not isinstance(payload, dict):
+            return {"error": "上报内容格式不对"}
+        body = dict(payload, install_id=self._install_id())
+        request = urllib.request.Request(
+            REPORT_URL, data=json.dumps(body, ensure_ascii=False).encode("utf-8"), method="POST",
+            headers={"Content-Type": "application/json", "User-Agent": f"AndroidAdCleaner/{VERSION}"})
+        try:
+            # 云函数闲置后第一次调用要加载依赖，给足时间
+            with urllib.request.urlopen(request, timeout=45) as response:
+                result = json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as e:
+            if e.code == 429:
+                return {"error": "上报太频繁，请一小时后再试"}
+            try:
+                message = json.loads(e.read().decode("utf-8")).get("message") or ""
+            except (ValueError, OSError):
+                message = ""
+            return {"error": f"服务器拒绝了这次上报（{e.code}{'：' + message if message else ''}）"}
+        except (urllib.error.URLError, OSError, ValueError) as e:
+            return {"error": f"连不上上报服务器：{getattr(e, 'reason', e)}"}
+        self.report_times.append(now)
+        if result.get("status") == "duplicate":
+            return {"ok": True, "duplicate": True}
+        if result.get("status") != "ok":
+            return {"error": "服务器没有确认收到"}
+        return {"ok": True, "id": result.get("id", "")}
 
     def copy_text(self, text):
         try:

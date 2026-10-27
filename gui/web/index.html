@@ -90,6 +90,7 @@ label.chk small{color:var(--sub);display:block}
 .fb-types label:has(input:checked){border-color:var(--accent);background:var(--accent-weak);color:var(--accent)}
 textarea{width:100%;border:1px solid var(--line);border-radius:10px;padding:10px 12px;font:inherit;background:var(--bg);color:var(--text);resize:vertical}
 textarea.mono{font-family:var(--mono);font-size:12px}
+pre.report{background:var(--log);color:var(--logtext);font-family:var(--mono);font-size:12px;border-radius:10px;padding:14px;max-height:300px;overflow:auto;white-space:pre-wrap;word-break:break-all;margin:12px 0 0}
 .modal .box.wide{width:min(640px,92vw);max-height:88vh;overflow:auto}
 </style>
 </head>
@@ -370,7 +371,7 @@ function showDone(r){
     <div class="card"><h3>最后一步：关闭开发者模式</h3>
       <p class="lead" style="margin:0 0 12px">${ok ? "核对结果后，若不再使用电脑调试，建议关闭开发者模式和 USB 调试。" : "有步骤未成功；若还要排查或重试，请先保留 USB 调试。结束排查后再关闭。"}部分银行、支付、游戏 App 检测到它开着会提醒或拒绝运行。<br>关掉<b>不会撤销</b>已经成功的改动。</p>
       <div class="row"><button class="btn" onclick="askDevOff()">帮我关闭</button><button class="btn plain" onclick="selfOff()">我在手机上自己关</button></div></div>
-    ${ok ? "" : `<div class="note bad">有步骤没成功。<a href="#" onclick="openFeedback('bug');return false">反馈这个问题</a>，会附上这次的日志，方便定位。</div>`}
+    ${ok ? "" : `<div class="note bad">有步骤没成功。<a href="#" onclick="openReport();return false">上报错误日志</a>（不需要账号，发送前可以看到全部内容），或<a href="#" onclick="openFeedback('bug');return false">到 GitHub 反馈</a>。</div>`}
     <details class="card"><summary>查看完整日志</summary><div class="log" style="height:260px">${esc(document.querySelector("#log")?.textContent || "")}</div></details>`;
 }
 function askDevOff(){
@@ -399,7 +400,30 @@ async function openFeedback(type){
     <label class="chk"><input type="checkbox" id="fbdiag" checked><span>附带诊断信息<small>客户端版本、电脑系统、手机型号和系统版本、执行结果和最近的日志。手机序列号已替换掉，不含应用列表和通知内容。可以在下面修改。</small></span></label>
     <details><summary>查看 / 修改诊断信息</summary><textarea id="fbdiagtext" class="mono" rows="6" style="margin-top:8px">${esc(diag)}</textarea></details>
     <div id="fbmsg" class="note info hide" style="margin-top:12px"></div>
-    <div class="actions"><button class="btn plain" onclick="closeModal()">取消</button><button class="btn" onclick="sendFeedback()">提交到 GitHub</button></div>`, true);
+    <div class="actions"><button class="btn plain" onclick="openReport()">没有 GitHub 账号：上报错误日志</button><button class="btn plain" onclick="closeModal()">取消</button><button class="btn" onclick="sendFeedback()">提交到 GitHub</button></div>`, true);
+}
+
+/* ---------- 错误日志上报：先预览全部内容，确认后发送 ---------- */
+async function openReport(){
+  S.report = await api.report_payload();
+  modal(`<h3>上报错误日志</h3>
+    <p class="lead" style="margin:0">发送到项目服务器 supabase.ahuamiao.com，用来定位问题。下面是要发送的全部内容：手机序列号、电脑用户名、邮箱、手机号、IP 已替换，不含应用列表、通知内容和账号信息。服务器保存 90 天，IP 只存不可还原的哈希。</p>
+    <pre class="report">${esc(JSON.stringify(S.report, null, 2))}</pre>
+    <div id="rpmsg" class="note hide" style="margin-top:12px"></div>
+    <div class="actions"><button class="btn plain" onclick="closeModal()">取消</button><button class="btn" id="rpbtn" onclick="sendReport()">确认上报</button></div>`, true);
+}
+async function sendReport(){
+  const b = $("#rpbtn"), m = $("#rpmsg");
+  b.disabled = true; b.textContent = "上报中…";
+  const r = await api.send_report(S.report);
+  m.classList.remove("hide", "ok", "bad");
+  if (r.ok){
+    m.classList.add("ok");
+    m.textContent = r.duplicate ? "这份日志一小时内上报过，不用重复发送。" : `上报成功。报告编号 ${r.id}；需要删除这份记录时，在 GitHub 提 Issue 附上编号。`;
+    b.textContent = "已上报";
+  } else {
+    m.classList.add("bad"); m.textContent = r.error; b.disabled = false; b.textContent = "重试";
+  }
 }
 async function sendFeedback(){
   const type = (document.querySelector("input[name=fbt]:checked") || {}).value || "bug";
