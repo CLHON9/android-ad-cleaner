@@ -119,11 +119,36 @@ class ChannelTests(unittest.TestCase):
         self.assertIsNone(chan.channel_switch(p, "营销"))
 
     def test_vivo_app_wide_notification_page_is_refused(self, _sleep):
+        # vivo 应用总页与渠道页同一个 Activity；总页有多个开关，「允许通知」管整个 App，不能点
         p = channel_phone()
-        p.focus.return_value = "com.vivo.systemuiplugin/.NotificationSettings"
-        with patch.object(chan, "parse", return_value=snapshot()):
-            self.assertIn("整个 App", chan.toggle(p, "com.example", "promo", False, "营销"))
+        p.focus.return_value = ("com.vivo.systemuiplugin/com.vivo.systemui.statusbar.notification"
+                                ".settings.channels.NotificationSettingsActivity")
+        root = p.tree()
+        extra = ET.fromstring('''<node bounds="[0,500][1080,610]">
+          <node text="静默通知" bounds="[60,520][600,590]"/>
+          <node class="android.widget.Switch" checked="false" checkable="true" bounds="[900,520][1040,590]"/></node>''')
+        root[0].append(extra)
+        with patch.object(chan, "parse", return_value=snapshot()), patch.object(chan, "via_app_page", return_value=None):
+            self.assertIn("未确认", chan.toggle(p, "com.example", "promo", False, "营销"))
         p.click.assert_not_called()
+
+    def test_vivo_channel_page_needs_app_title_from_app_page(self, _sleep):
+        # X300 Ultra 实测：总页与渠道页同一个 Activity，只能靠顶栏标题区分
+        p = channel_phone()
+        p.focus.return_value = ("com.vivo.systemuiplugin/com.vivo.systemui.statusbar.notification"
+                                ".settings.channels.NotificationSettingsActivity")
+        for node in p.tree().iter():
+            if node.get("text") == "营销":
+                node.set("resource-id", "android:id/originui_vtoolbar_normal_title_rom14_0")
+        p.vivo_app = None
+        self.assertIsNone(chan.channel_switch(p, "营销"))          # 没经过总页：不知道 App 名
+        p.vivo_app = "示例应用"
+        self.assertEqual(chan.channel_switch(p, "营销")[0], "允许通知")
+        p.vivo_app = "营销"
+        self.assertIsNone(chan.channel_switch(p, "营销"))          # App 与渠道同名：无法区分
+        p.vivo_app = "示例应用"
+        p.focus.return_value = "com.vivo.systemuiplugin/.OtherActivity"
+        self.assertIsNone(chan.channel_switch(p, "营销"))
 
     def test_last_click_is_verified_not_reported_as_failure(self, _sleep):
         p = channel_phone()

@@ -11,7 +11,8 @@
 - Windows 剪贴板改 ctypes Unicode；反馈网址带诊断摘要。
 - Mac Intel：旧 `gui/.venv-x86` 用了 Homebrew Python（minos 26.0），已改名 `gui/.venv-x86-brew-old`；`build_mac.sh` 只用 uv managed Python，并扫描包内文件最低系统版本，高于 11 即失败。
 - 真机（无线调试）：Find X10 Pro Max / ColorOS 17（Gio 的手机，规矩见 ~/oppo-debloat/CLAUDE.md，收尾插电常亮改回 0）与荣耀 PNM-AN10 / MagicOS 10（插电常亮原值 7）通知渠道来回测试通过，测试后回读一致。真机发现并修复：列表卡片里的 ✕ 不点、「不同意」算拒绝按钮、`AutoCompleteTextView` 搜索框。
-- 161 项回归通过；Android 15 模拟器 scan / off / on 通过。三星、华为、荣耀内联布局与旧版仍无真机，以 docs/09 的「待复测」为准。
+- vivo X300 Ultra（OriginOS 6，无线调试）：总页与渠道页同 Activity，靠顶栏标题区分，App 名在总页找到渠道行的同一次读屏里记录。**用户要求：测试不要碰 Edge（他把默认浏览器改成了 Edge，普通用户也不装），用支付宝 / 淘宝 / 系统自带应用测。**
+- 162 项回归通过；Android 15 模拟器 scan / off / on 通过。三星、华为、荣耀内联布局与旧版仍无真机，以 docs/09 的「待复测」为准。
 
 ## 2026-10-26 用户反馈改进（已随 0.2.4 发布）
 

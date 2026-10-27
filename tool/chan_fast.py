@@ -124,16 +124,31 @@ NOTIFY_HOSTS = {
 HEADER_IDS = ("entity_header_title", "header_title")   # 三星 One UI 渠道名在页眉控件里，位置低于 0.22H（#95）
 
 
+VIVO = "com.vivo.systemuiplugin"
+
+
 def notification_focus(p):
+    """vivo 的应用通知总页和单个渠道页是同一个 Activity（X300 Ultra / OriginOS 6 实测）：
+    总页标题是 App 名，「允许通知」管整个 App；渠道页标题是渠道名，开关数随渠道开关状态变化。
+    这里只认页面身份，区分交给 channel_switch()。"""
     focus = p.focus()
-    if "com.vivo.systemuiplugin" in focus:
-        raise RuntimeError("此 vivo 通知页的开关会影响整个 App，已跳过以保留订单、聊天等通知")
     package, _, activity = focus.partition("/")
     if activity.startswith("."):
         activity = package + activity
     if package in NOTIFY_HOSTS:
         return focus if NOTIFY_HOSTS[package].match(activity) else ""
+    if package == VIVO:
+        return focus if activity.endswith(".notification.settings.channels.NotificationSettingsActivity") else ""
     return focus if "settings" in package.lower() and ("notification" in activity.lower() or "SubSettings" in activity) else ""
+
+
+def top_title(p, root):
+    """顶栏标题控件的文字（vivo：originui_vtoolbar_normal_title）。"""
+    for t, b, n in p.texts(root):
+        rid = (n.get("resource-id") or "").lower()
+        if "toolbar" in rid and "title" in rid and b[1] < p.H * 0.22:
+            return t
+    return None
 
 
 def allow_switches(p, root):
@@ -160,6 +175,12 @@ def channel_switch(p, name):
             b[1] < p.H * 0.4 and (n.get("resource-id") or "").endswith(HEADER_IDS)))
             for t, b, n in p.texts(root)):
         return None
+    if VIVO in focus:
+        # vivo 应用总页的「允许通知」会关掉整个 App，订单、聊天提醒也没了。只认从总页点进来的渠道页：
+        # 顶栏是渠道名，且不同于刚才总页的 App 名；两者同名就无法区分，跳过。
+        app = getattr(p, "vivo_app", None)
+        if not app or top_title(p, root) != name or name == app:
+            return None
     switches = allow_switches(p, root)
     return switches[0] if len(switches) == 1 else None
 
@@ -167,7 +188,8 @@ def channel_switch(p, name):
 def inline_switch(p, name):
     """应用通知页里渠道行自带开关（荣耀 MagicOS 10 / Android 16，#99）。
     只认标题与渠道名完全相同、全页唯一的一行，取这一行里唯一的开关；应用总开关的标题在 ALLOW 里，不会命中。"""
-    if not name or name in ALLOW or not notification_focus(p):
+    focus = notification_focus(p)
+    if not name or name in ALLOW or not focus or VIVO in focus:
         return None
     root = p.tree()
     parents = {c: n for n in root.iter() for c in n}
@@ -223,6 +245,7 @@ def via_app_page(p, pk, name):
         if p.locked() or not notification_focus(p):
             return None
         root = p.tree()
+        vivo = VIVO in notification_focus(p)
         parents = {c: n for n in root.iter() for c in n}
         for text, b, n in p.texts(root):
             if text != name or b[1] < p.H * 0.22:
@@ -232,8 +255,11 @@ def via_app_page(p, pk, name):
                 row = parents.get(row)
             if row is None:
                 return None
-            if any(x.get("checkable") == "true" for x in row.iter()):
-                return wait_page(p, name)        # 内联开关：不当作导航行点
+            if not vivo and any(x.get("checkable") == "true" for x in row.iter()):
+                return wait_page(p, name)        # 内联开关：不当作导航行点；vivo 的渠道行也带 checked，要点进去
+            if vivo:
+                # 同一次读屏里列表有这一行渠道，说明是总页：这时的顶栏才是 App 名（直达页可能还没退掉）
+                p.vivo_app = top_title(p, root)
             before = p.sig()
             l, t, r, btm = bounds(n)
             p.click((l + r) // 2, (t + btm) // 2)
@@ -291,6 +317,7 @@ def toggle(p, pk, cid, want_on, name="", allowed=()):
             return "受保护的找机位功能通知，未关闭"
         if state(before, apps_before, pk, cid) in ("--", "del", "app"):
             return "渠道不存在、已删除或应用通知已关闭，未操作"
+        p.vivo_app = None
         sw = None
         if not truncated(cid):
             # NEW_TASK|CLEAR_TASK 避免复用旧渠道；仍需核对真实页面。
