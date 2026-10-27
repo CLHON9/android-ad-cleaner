@@ -7,6 +7,9 @@
 |---|---|---|
 | Xiaomi 18 Pro Max（M154FF） | HyperOS OS4.0.24，Android 17 | 2026-10-22 实测；2026-10-25 九段脚本重跑通过 |
 | Xiaomi 18 Fold（2608BPX34C） | CP2A.260605.016，Android 17 | 2026-10-24 社区实测（[Issue #2](https://github.com/rddmwmddr/android-ad-cleaner/issues/2)） |
+| REDMI K90 Pro Max（25102RKBEC） | HyperOS OS4.0.2.0.XPMCNXM，Android 17 | 2026-10-27 实测，九段机型脚本全通过（169 秒） |
+
+**K90 Pro Max 与上面两台的两处差异**：① 设置首页一屏放不下，「隐私与安全」在第二屏，要往下滑一段才看得到；②「隐私与安全」打开的是安全中心的 `PrivacySafetyActivity`，只有「隐私 / 安全」两个分栏、默认停在「隐私」，得先切到「安全」分栏，「更多安全设置」在这一页的最末尾。机型脚本 `recipes/xiaomi-25102RKBEC/` 已按这两点写。
 
 两台系统底包相同，差别在 App 版本：商店、浏览器、全局搜索、手机管家升级后入口变了。下面每一项都写了「旧版 / 新版」两种入口，按你手机上看到的选。
 
@@ -35,7 +38,8 @@
 
 - 🔴 隐私设置 → 个性化推荐
 - 🔴 垃圾清理 → 推荐内容
-- ⚠️ 新版手机管家（13.6.5）这两项都没有了，跳过。
+- ⚠️ 有些版本（如 13.6.5）这两项都没有了，跳过。
+- ⚠️ K90 Pro Max（手机管家 13.x）两项都在，但「隐私设置」压在整页最末尾（各功能模块设置之下），要滚到底才看得到，默认翻 6 屏够不着。这一页的「个性化推荐」出厂是**开**的。
 
 ## 4. 下载管理
 
@@ -50,6 +54,7 @@
 - 🔴 每次联网时通知
 - 🟢 自动更新（和上一项挨着，别点错行）
 - 🔴 隐私设置 → 个性化推荐
+- ⚠️ K90 Pro Max 打开主题商店会落到 `com.android.thememanager` 的 `ThemeResourceProxyTabActivity`；系统广告组件 `com.miui.systemAdSolution` 未挂起时，开屏窗会抢焦点，自动化会被中断。先执行 `run.py -s 序列号 suspend com.miui.systemAdSolution`（可还原）再跑这一段。
 
 ## 6. 浏览器
 
