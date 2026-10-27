@@ -2,7 +2,7 @@
 
 本仓库的操作规范写在 [AGENTS.md](AGENTS.md)。开工前读完它。
 
-## 2026-10-27 社区批量反馈（0.2.4）
+## 2026-10-27 社区批量反馈（0.2.4，已发布）
 
 - 137 个打开的 Issue 按日志归类，逐条去向见 [docs/09](docs/09-社区问题处理.md) 首节。原始 Issue 导出和 GBK 乱码还原不进仓库。
 - 营销通知：ColorOS `com.oplus.notificationmanager`、荣耀 / 华为系统管家渠道页、三星 `entity_header_title`、Android 16 内联渠道行；回读只取 user 0；缩略 ID 与系统锁定渠道不进扫描结果；点击后同 App 其他渠道或总开关变化 → 原位点回并停止整批（`StopBatch`）。「未确认」日志附包名 / Activity。

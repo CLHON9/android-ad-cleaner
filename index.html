@@ -199,7 +199,7 @@ footer .wrap{display:flex;flex-wrap:wrap;gap:16px 28px;justify-content:space-bet
   <details><summary>Windows 提示缺少 WebView2</summary><p>点「确定」打开微软官网，下载安装「Evergreen Bootstrapper」，再打开本程序。Windows 11 自带，部分 Windows 10 要装。</p></details>
   <details><summary>插上手机，客户端认不出来</summary><p>先检查三件事：换一根能传数据的线；手机通知栏里 USB 用途选「传输文件」；手机弹窗点「允许 USB 调试」。Windows 还要装手机品牌的 USB 驱动，各品牌的「手机助手」里带驱动。</p></details>
   <details><summary>读屏提示 already registered，几秒就失败</summary><p>这是手机读屏服务被占用。0.2.3 增加会话清理、同机任务互斥和一次有限重试。请先退出旧版及其他自动化工具；仍失败时手动重启手机，解锁后只打开一个客户端，再点「检查读屏连接」。持续失败可复制完整诊断。无需关闭手机无障碍服务或清除应用数据。</p></details>
-  <details><summary>通知扫描出现 QueryController / UiDevice 堆栈</summary><p>请更新 0.2.3，扫描和状态复查已改为 adb 只读，不需要启动手机读屏服务。实际关闭仍需要读屏；可以先点「检查读屏连接」，失败时「复制完整诊断」反馈，避免只看到报错末尾。</p></details>
+  <details><summary>通知扫描出现 QueryController / UiDevice 堆栈</summary><p>请更新到最新版，扫描和状态复查已改为 adb 只读，不需要启动手机读屏服务。实际关闭仍需要读屏；可以先点「检查读屏连接」，失败时「复制完整诊断」反馈，避免只看到报错末尾。</p></details>
   <details><summary>Windows 0.2.0 显示 127.0.0.1 超时</summary><p>请下载最新版（0.2.1 起已修复），新版直接读取本地页面，已通过 Windows 原生界面验证。旧版不会自动获得修复。</p></details>
   <details><summary>华为原生鸿蒙、小米 10、荣耀 Magic7 Pro 支持吗？</summary><p>使用 HDC 的原生鸿蒙暂不支持。小米 10 和荣耀 Magic7 Pro 的反馈已用于修复横屏、通知判定等通用问题，但专用机型脚本尚未完成；可以选择同品牌参考脚本，仍需在对应手机上验证。</p></details>
   <details><summary>会影响系统更新和保修吗？</summary><p>不会。不 root，不解锁，不改系统分区。用到的是开发者选项和系统自带的设置项。</p></details>
@@ -215,19 +215,19 @@ footer .wrap{display:flex;flex-wrap:wrap;gap:16px 28px;justify-content:space-bet
 <script>
 /* ===== 发布信息：发新版或填网盘链接时只改这里 ===== */
 const REL = {
-  version: "0.2.3",
-  github: "https://github.com/rddmwmddr/android-ad-cleaner/releases/download/v0.2.3/",
+  version: "0.2.4",
+  github: "https://github.com/rddmwmddr/android-ad-cleaner/releases/download/v0.2.4/",
   // 百度网盘：每个版本可以单独填链接（files 里的 baidu）；没填的用这里的总链接（整个大文件夹的分享）
   baidu: { url: "", code: "" },
   files: [
-    { id: "mac-arm64", folder: "Mac-Apple芯片", baidu: { url: "", code: "" }, title: "Mac · Apple 芯片", sub: "M1 / M2 / M3 / M4 及以后", file: "AndroidAdCleaner-0.2.3-mac-arm64.dmg", size: "35.0 MB",
-      note: "已签名并通过苹果公证，双击就能打开", sha: "52efd80557420f5d6d62a4641cd537a1cc1e4fe97ff5618c69c10054ecdfebaa" },
-    { id: "mac-intel", folder: "Mac-Intel芯片", baidu: { url: "", code: "" }, title: "Mac · Intel 芯片", sub: "2020 年及以前的 Intel Mac", file: "AndroidAdCleaner-0.2.3-mac-intel.dmg", size: "39.8 MB",
-      note: "已签名并通过苹果公证", sha: "279f5b61dd8270194bdce918f57e22b45938db5187bb909c27919ea5de3f5650" },
-    { id: "win-setup", folder: "Windows-安装版", baidu: { url: "", code: "" }, title: "Windows · 安装版", sub: "Windows 10 / 11（64 位）", file: "AndroidAdCleaner-0.2.3-windows-setup.exe", size: "30.1 MB",
-      note: "弹出安全提示时点「更多信息」→「仍要运行」", sha: "e5dd6d02d55f1613f8802b7edbf5e24f85ac3c7dd7636d045cd3fd61a0caf1a4" },
-    { id: "win-zip", folder: "Windows-免安装版", baidu: { url: "", code: "" }, title: "Windows · 免安装", sub: "Windows 10 / 11（64 位）", file: "AndroidAdCleaner-0.2.3-windows-portable.zip", size: "44.8 MB",
-      note: "解压后双击 AndroidAdCleaner.exe", sha: "640dc6b8867b48f868bb06ba26adc9f26c1c2b20aab37ec06c08a5638207bf70" },
+    { id: "mac-arm64", folder: "Mac-Apple芯片", baidu: { url: "", code: "" }, title: "Mac · Apple 芯片", sub: "M1 / M2 / M3 / M4 及以后", file: "AndroidAdCleaner-0.2.4-mac-arm64.dmg", size: "35.1 MB",
+      note: "已签名并通过苹果公证，双击就能打开", sha: "4f69139940e3590fc26a8280440d6baa7786a516bd8728df195c976952851b07" },
+    { id: "mac-intel", folder: "Mac-Intel芯片", baidu: { url: "", code: "" }, title: "Mac · Intel 芯片", sub: "2020 年及以前的 Intel Mac，macOS 11 及以上", file: "AndroidAdCleaner-0.2.4-mac-intel.dmg", size: "40.1 MB",
+      note: "已签名并通过苹果公证", sha: "8a93d2a3885f3549c156d3d07174d4bffcb8108317d74d2a77144cbd3e005edd" },
+    { id: "win-setup", folder: "Windows-安装版", baidu: { url: "", code: "" }, title: "Windows · 安装版", sub: "Windows 10 / 11（64 位）", file: "AndroidAdCleaner-0.2.4-windows-setup.exe", size: "30.1 MB",
+      note: "弹出安全提示时点「更多信息」→「仍要运行」", sha: "f789e96b359a5358babd3c0be058561f5c08fba6bd3da476bc22bbd91caa1d2e" },
+    { id: "win-zip", folder: "Windows-免安装版", baidu: { url: "", code: "" }, title: "Windows · 免安装", sub: "Windows 10 / 11（64 位）", file: "AndroidAdCleaner-0.2.4-windows-portable.zip", size: "44.8 MB",
+      note: "解压后双击 AndroidAdCleaner.exe", sha: "c5f91f6de7d026266038104170780fce6a7fd8764b96dd1ab6bf410337249db9" },
   ],
 };
 /* ================================================ */
