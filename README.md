@@ -8,16 +8,16 @@
 
 插上手机，点几下按钮。不需要 Python，也不需要 AI 工具。
 
-> **v0.2.4 · 2026-10-27**：处理 10-26 至 10-27 的 140 多条反馈。OPPO / 一加 / realme（ColorOS 16、17）、荣耀、三星的营销通知不再全部跳过；小米未开「USB 调试（安全设置）」时检测页直接提示；执行中途断线会停下说明原因，不再显示假成功；Windows 等不到手机时提示驱动和调试开关；诊断不再乱码；Mac Intel 版改为支持 macOS 11 及以上。旧版不会自动更新，请重新下载，已有备份会保留。详见 [更新记录](CHANGELOG.md) 和 [社区问题处理记录](docs/09-社区问题处理.md)。
+> **v0.2.5 · 2026-10-27**：新增错误日志上报。执行失败时，不需要 GitHub 账号也能把日志发给维护者；发送前原样展示全部内容，确认后发送。序列号、用户目录、邮箱、手机号、IP 在客户端和服务器各替换一遍，服务器保存 90 天。0.2.4 的修复全部保留。旧版不会自动更新，请重新下载，已有备份会保留。详见 [更新记录](CHANGELOG.md) 和 [错误日志上报](docs/12-错误日志上报.md)。官网：https://ahuamiao.com/sites/other/android-ad-removal-intro.html
 
 此前版本已处理 Windows 本地页面超时、荣耀截图越界、通知渠道误操作风险、vivo 快应用与备份问题。各 Issue 的处理范围和待验证项见 [社区问题处理记录](docs/09-社区问题处理.md)。仅支持通过 adb 连接的安卓设备，暂不支持使用 HDC 的原生鸿蒙。
 
 | 电脑 | 下载 | 说明 |
 |---|---|---|
-| Mac · Apple 芯片（M1 及以后） | [AndroidAdCleaner-0.2.4-mac-arm64.dmg](https://github.com/rddmwmddr/android-ad-cleaner/releases/download/v0.2.4/AndroidAdCleaner-0.2.4-mac-arm64.dmg) | 已签名、通过苹果公证，双击就能打开 |
-| Mac · Intel 芯片（macOS 11 及以上） | [AndroidAdCleaner-0.2.4-mac-intel.dmg](https://github.com/rddmwmddr/android-ad-cleaner/releases/download/v0.2.4/AndroidAdCleaner-0.2.4-mac-intel.dmg) | 同上 |
-| Windows 10 / 11 · 安装版 | [AndroidAdCleaner-0.2.4-windows-setup.exe](https://github.com/rddmwmddr/android-ad-cleaner/releases/download/v0.2.4/AndroidAdCleaner-0.2.4-windows-setup.exe) | 弹「Windows 已保护你的电脑」时点「更多信息」→「仍要运行」 |
-| Windows 10 / 11 · 免安装 | [AndroidAdCleaner-0.2.4-windows-portable.zip](https://github.com/rddmwmddr/android-ad-cleaner/releases/download/v0.2.4/AndroidAdCleaner-0.2.4-windows-portable.zip) | 解压后双击 `AndroidAdCleaner.exe` |
+| Mac · Apple 芯片（M1 及以后） | [AndroidAdCleaner-0.2.5-mac-arm64.dmg](https://github.com/rddmwmddr/android-ad-cleaner/releases/download/v0.2.5/AndroidAdCleaner-0.2.5-mac-arm64.dmg) | 已签名、通过苹果公证，双击就能打开 |
+| Mac · Intel 芯片（macOS 11 及以上） | [AndroidAdCleaner-0.2.5-mac-intel.dmg](https://github.com/rddmwmddr/android-ad-cleaner/releases/download/v0.2.5/AndroidAdCleaner-0.2.5-mac-intel.dmg) | 同上 |
+| Windows 10 / 11 · 安装版 | [AndroidAdCleaner-0.2.5-windows-setup.exe](https://github.com/rddmwmddr/android-ad-cleaner/releases/download/v0.2.5/AndroidAdCleaner-0.2.5-windows-setup.exe) | 弹「Windows 已保护你的电脑」时点「更多信息」→「仍要运行」 |
+| Windows 10 / 11 · 免安装 | [AndroidAdCleaner-0.2.5-windows-portable.zip](https://github.com/rddmwmddr/android-ad-cleaner/releases/download/v0.2.5/AndroidAdCleaner-0.2.5-windows-portable.zip) | 解压后双击 `AndroidAdCleaner.exe` |
 
 不知道 Mac 是哪种芯片：左上角苹果图标 → 关于本机，「芯片」写 Apple M 开头的选 Apple 芯片。所有版本：[Releases](https://github.com/rddmwmddr/android-ad-cleaner/releases)。用法：[docs/08-桌面客户端.md](docs/08-桌面客户端.md)。
 
