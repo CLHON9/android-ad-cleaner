@@ -2,10 +2,10 @@
 
 | 品牌 | 清单 | 实测机型 |
 |---|---|---|
-| OPPO / 一加 / realme | [OPPO-ColorOS.md](OPPO-ColorOS.md) | Find N6、Find X10 Pro Max、Find X9 Ultra（部分）、Find N3 典藏版（部分） |
+| OPPO / 一加 / realme | [OPPO-ColorOS.md](OPPO-ColorOS.md) | Find N6、Find X10 Pro Max、Find X9 Ultra（部分）、Find N3 典藏版（部分）、一加 Ace 2、Ace 5 |
 | 荣耀 | [荣耀-MagicOS.md](荣耀-MagicOS.md) | PNM-AN10 |
-| 小米 / Redmi | [小米-HyperOS.md](小米-HyperOS.md) | Xiaomi 18 Pro Max |
-| vivo / iQOO | [vivo-OriginOS.md](vivo-OriginOS.md) | X300 Ultra（V2547DA、V2547A） |
+| 小米 / Redmi | [小米-HyperOS.md](小米-HyperOS.md) | Xiaomi 18 Pro Max、18 Fold、REDMI K80 至尊版、K90 Pro Max、Redmi K70、Note 14 Pro、Note 12 Turbo |
+| vivo / iQOO | [vivo-OriginOS.md](vivo-OriginOS.md) | X300 Ultra（V2547DA、V2547A）、iQOO V2324HA、V2361A |
 
 ## 怎么读
 

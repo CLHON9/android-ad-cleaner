@@ -12,8 +12,9 @@
 
 **K90 Pro Max 与上面两台的两处差异**：① 设置首页一屏放不下，「隐私与安全」在第二屏，要往下滑一段才看得到；②「隐私与安全」打开的是安全中心的 `PrivacySafetyActivity`，只有「隐私 / 安全」两个分栏、默认停在「隐私」，得先切到「安全」分栏，「更多安全设置」在这一页的最末尾。机型脚本 `recipes/xiaomi-25102RKBEC/` 已按这两点写。
 | Redmi Note 12 Turbo（23049RAD8C） | HyperOS OS3.0.5.0.VMRCNXM，Android 15 | 2026-10-25 实测（九段脚本跑通，用时约 3.5 分钟） |
+| Redmi K70（23113RKC6C） | HyperOS OS3.0.307.0.WNKCNXM，Android 16 | 2026-10-26 无线+有线：9 段专用脚本；当前目标 20 项；本轮实测含已移除的小说 1 项；浏览器「最新资讯」disabled，未操作 |
 
-两台系统底包相同，差别在 App 版本：商店、浏览器、全局搜索、手机管家升级后入口变了。下面每一项都写了「旧版 / 新版」两种入口，按你手机上看到的选。
+Xiaomi 18 Pro Max 和 18 Fold 的系统底包相同，差别在 App 版本：商店、浏览器、全局搜索、手机管家升级后入口变了。Redmi K70 是 HyperOS 3 / Android 16，入口单独记录。下面每一项都写了「旧版 / 新版」两种入口，按你手机上看到的选。
 
 REDMI K80 至尊版（HyperOS 2 / Android 16）结构差异：「隐私与安全」首页是权限中心，没有「更多安全设置」，广告服务用设置顶部搜索直达；商店冷启动可能落「福利推广页」，先点「回到首页」再走「我的」；主题商店直接拉 com.android.thememanager/.ThemeResourceProxyTabActivity 最稳（themestore 冷启动的重定向过渡窗会让引擎前台校验误判）；主题/商店底部标签的无障碍名带「未选中,」前缀，要按屏幕底部位置点。
 
@@ -26,6 +27,8 @@ REDMI K80 至尊版（HyperOS 2 / Android 16）结构差异：「隐私与安全
 
 - 🔴 个性化广告推荐
 - ⚠️ 「限制广告跟踪」「防止广告追踪」这类开关是反的：要**打开**。
+
+**Redmi K70（23113RKC6C，HyperOS OS3.0.307.0 / Android 16，2026-10-26）**：在「隐私与安全」里先点上方「安全」标签，再进「更多安全设置 → 广告服务」。系统设置搜索没有命中「广告服务」，请走菜单。专用脚本覆盖系统广告、应用商店、手机管家、下载管理、主题、浏览器、全局搜索、负一屏、天气和日历 9 段；系统广告段已做真实开启→关闭验证（无线 39 秒、有线 28 秒，均调整 1 项、回读确认），浏览器 2 项、天气 2 项、日历 1 项也已实际关闭。**这些是源码验证结果，0.2.3 安装包不包含 K70 适配。**浏览器「小说」功能入口已从脚本移除（本轮曾关闭，手机仍关闭）；「最新资讯」在 20.28.1020918 为 disabled；完整矩阵见 [K70 实测](../13-红米K70实测.md)。
 
 ## 2. 应用商店
 
@@ -127,6 +130,8 @@ adb -s S shell cmd connectivity set-chain3-enabled true
 adb -s S shell pm unsuspend --user 0 com.miui.systemAdSolution
 adb -s S shell cmd connectivity set-package-networking-enabled true com.miui.systemAdSolution
 ```
+
+⚠️ 当前 `unsuspend` 不会恢复共享的 `chain3` 原值；请在挂起前记录 `cmd connectivity get-chain3-enabled` 的结果。若原值是 `disabled`，还原后手动执行 `adb -s S shell cmd connectivity set-chain3-enabled false`；若原值是 `enabled`，保持原值。没有记录时不要猜测，先核对其他网络规则。
 
 ---
 

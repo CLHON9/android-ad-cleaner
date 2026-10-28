@@ -99,13 +99,12 @@
 | 小米 | REDMI K90 Pro Max（25102RKBEC） | HyperOS OS4.0.2.0.XPMCNXM / Android 17 | ✅ 10-27 九段实测通过，重跑 169 秒 | ✅ | ✅ 26 个渠道 |
 | 小米 | Redmi Note 14 Pro（24090RA29C） | HyperOS 3.0.309.0 / Android 16 | ✅ 10-26 八段实测通过，整轮约 5 分钟 | ✅ | ✅ 11 个渠道 |
 | Redmi | Note 12 Turbo（23049RAD8C） | HyperOS OS3.0.5.0 | ✅ 实测通过，九段 3.5 分钟 | ✅ | ✅ |
+| Redmi | K70（23113RKC6C） | HyperOS 3.0.307.0 / Android 16 | ⚠️ 9 段专用脚本，目标 20 项；[实测记录](docs/13-红米K70实测.md) | ✅ | —（未测通知） |
 | vivo | X300 Ultra（V2547DA） | OriginOS 6 | ⚠️ 脚本已补，整段待真机验证 | ✅ | ✅ |
 | vivo（iQOO） | V2324HA | 原系统 Android 16（PD2324J_A_16.2.13.1.W10） | ✅ 2026-10-27 实测，七段全通，重跑 2.5 分钟 | ✅ | 5 个渠道，关 3 个、跳过 1 个 |
 | vivo | V2361A | OriginOS 16（PD2361B_A_16.2.12.2.W10） | ⚠️ 2026-10-26 路径逐页实测、开关已实际关闭；引擎整段待验证 | ✅ | — |
 | vivo | X300 Ultra（V2547A） | OriginOS 7 | ✅ 2026-10-25 实测通过，重跑 126 秒 | ✅ | ⚠️ 只有应用级总开关 |
 | 一加 | Ace 2（PHK110） | ColorOS 16.0.5 / Android 16 | ✅ 2026-10-25 路径实测、整段重跑约 85 秒 | ✅ | 11 个关闭，1 个受限 |
-| 小米 | 18 Pro Max（M154FF） | HyperOS 4 | ⚠️ 路径实测，整段待验证 | ✅ | ✅ |
-| vivo | X300 Ultra（V2547DA） | OriginOS 6 | — | ✅ | ✅ |
 
 表格反映当前脚本和验证范围。小米 10、荣耀 Magic7 Pro 等反馈已修复可定位的通用缺陷，但仍需对应真机复测；同品牌参考脚本不等于专用适配，详细记录见 [更新记录](CHANGELOG.md)。
 
