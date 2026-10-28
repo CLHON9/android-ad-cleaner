@@ -1,9 +1,9 @@
-# vivo X300 Ultra 机型脚本：V2547DA（卫星通信版）、V2547A
+# vivo X300 Ultra 机型脚本：V2547DA（卫星通信版）。V2547A（OriginOS 7）另有社区实测脚本 recipes/vivo-V2547A/
 # 路径来源：V2547DA，OriginOS 6 / Android 16（PD2547D_A_16.0.22.8），2026-10-22 手动实测。机型脚本整段跑待验证。
 # 别的系统版本会用安全模式跑：只关点名的开关，找不到入口就跳过。
 # 用法：python3 tool/run.py -s 序列号 recipe [段名…]   不带段名=全跑
 BUILD = "PD2547D_A_16"
-MODELS = ["V2547DA", "V2547A"]
+MODELS = ["V2547DA"]
 import time
 
 ONLY = globals().get("ONLY") or []

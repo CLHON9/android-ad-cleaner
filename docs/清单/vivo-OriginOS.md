@@ -78,7 +78,7 @@ iQOO 结构相近。当前源码有 `recipes/vivo-V2547DA/` 和 `recipes/vivo-V2
 vivo 推送分类的渠道：`VPushChannel_0`（运营消息）、`VPushChannel_4`（精彩消息）、`VPushChannel_6`（推荐消息）。
 
 - 🔴 支付宝运营、精彩；抖音运营、推荐；云服务推送；使用技巧智能推送建议；Play 特惠；Edge 热门资讯、突发新闻
-- ⚠️ 最新 OriginOS 7 社区实测发现，`com.vivo.systemuiplugin` 页面的「允许通知」是应用级总开关，关闭会连订单、聊天通知一起关。当前源码在这个页面直接跳过，不继续按渠道操作；不能把它当作安全的渠道回退入口。依据 [PR #20](https://github.com/rddmwmddr/android-ad-cleaner/pull/20)，待其他版本逐一核实。
+- ⚠️ OriginOS 7 社区实测（[PR #20](https://github.com/rddmwmddr/android-ad-cleaner/pull/20)）：`com.vivo.systemuiplugin` 应用总页的「允许通知」是应用级总开关，关闭会连订单、聊天通知一起关。源码在总页不点开关，做法见下文。
 - ⚠️ 渠道页由 `com.vivo.systemuiplugin` 处理，不要强行停止它。
 
 V2547A 上的实测数据（2026-10-25，改的就是页面顶部那个「允许通知」）：
@@ -88,17 +88,7 @@ V2547A 上的实测数据（2026-10-25，改的就是页面顶部那个「允许
 | 点掉「允许通知」 | `DEFAULT` → `NONE`（整个 App 的通知全关） | `2`，一动不动 |
 | 再点回来 | `NONE` → `DEFAULT` | `2` |
 
-也就是说照着渠道名去关，实际关掉的是这个 App 的全部通知。**vivo 上请直接按「应用级」处理**，
-不要指望只关某一个营销渠道。需要压掉某个 App 的推送就整包关（走 `POST_NOTIFICATIONS`
-运行时权限，不用 root，可以还原）：
-
-```bash
-python3 tool/run.py -s <序列号> notif-off com.bbk.appstore com.vivo.browser
-python3 tool/run.py -s <序列号> notif-on  com.bbk.appstore com.vivo.browser
-# 等价写法（工具还没更新时也能用）：
-adb shell pm revoke <包名> android.permission.POST_NOTIFICATIONS
-adb shell pm grant  <包名> android.permission.POST_NOTIFICATIONS
-```
+这一页的顶栏是 App 名时，「允许通知」管整个 App。客户端和 `chan-off` 在这一页不点开关：从这一页点进渠道行，顶栏变成渠道名、且不同于 App 名时才操作（X300 Ultra / OriginOS 6 真机通过）。认不出渠道页就跳过这一项，不用关掉整个 App 的通知代替，订单、聊天提醒都保留。
 
 另外 dumpsys 与手机页面会不一致：vivo 把渠道开关存在自家通知服务里，`dumpsys notification`
 的 `mImportance` 不跟着变，所以别拿 dumpsys 判断 vivo 上到底关没关，以手机页面为准。
@@ -208,7 +198,7 @@ Failure [only root can delete system app for a particular user]
 | 关开关弹出的确认框，按钮点不到 | 按钮节点的 text 是空的，标题挂在子节点里，要按按钮子树里的文字找 |
 | 点列表项左侧的文字没反应 | 点整行中间。商店「服务管理」、浏览器各设置项都这样 |
 | 负一屏子页 back 多退一层，后面的项全找不到 | 用 Activity 确认还在 `AppletSettingActivity`，不在就重新滑进来 |
-| 渠道页只有一个「允许通知」，关完整个 App 的通知都没了 | vivo 没有渠道级开关，按应用级处理；`notif-off / notif-on` |
+| 渠道页只有一个「允许通知」，关完整个 App 的通知都没了 | 那一页是应用总页。从总页点进渠道行再关；认不出渠道页就跳过，不关整个 App |
 | `dumpsys notification` 的渠道状态和手机页面不一致 | vivo 开关存在自家通知服务里，以手机页面为准 |
 | `pm suspend` / `disable-user` / `uninstall --user 0` 全报 SecurityException | 要 root。快应用用 `quickapp off`（改 `switch_quick_app_service`） |
 | 备份里 `disabled.txt` 第一行是 `Error: Shell does not have permission to access user 666` | `pm list packages` 不带 `--user 0` 会遍历分身/隐私空间；工具已改成带 `--user 0` |
