@@ -415,22 +415,22 @@ footer a:hover { color: var(--ink); }
 <script>
 /* ===== 发布信息：发新版或填网盘链接时只改这里（gui/upload_baidu.sh 按这个格式自动写入网盘链接） ===== */
 const REL = {
-  version: "0.2.5",
-  github: "https://github.com/rddmwmddr/android-ad-cleaner/releases/download/v0.2.5/",
+  version: "0.2.6",
+  github: "https://github.com/rddmwmddr/android-ad-cleaner/releases/download/v0.2.6/",
   // 百度网盘：每个版本可以单独填链接（files 里的 baidu）；没填的用这里的总链接（整个大文件夹的分享）
   baidu: { url: "https://pan.baidu.com/s/18slO2hS6PsZcVmWgdQZdUA", code: "wj4m" },
   files: [
-    { id: "mac-arm64", folder: "Mac-Apple芯片", baidu: { url: "https://pan.baidu.com/s/15unNUoLfAVIijFfnjq3OXg", code: "fzyd" }, title: "Mac · Apple 芯片", sub: "M1 / M2 / M3 / M4 及以后", file: "AndroidAdCleaner-0.2.5-mac-arm64.dmg", size: "35.1 MB",
-      note: "苹果公证通过，双击打开", sha: "866f76a69d40d9b8fab371d6aaa4d51d194131df6a7b0ea58eab9f3ff3f61ce8" },
-    { id: "mac-intel", folder: "Mac-Intel芯片", baidu: { url: "https://pan.baidu.com/s/15k4OqKdvv_v1Ar_h_uulIA", code: "ev2d" }, title: "Mac · Intel 芯片", sub: "2020 年及以前的 Intel Mac，macOS 11 及以上", file: "AndroidAdCleaner-0.2.5-mac-intel.dmg", size: "40.1 MB",
-      note: "苹果公证通过，双击打开", sha: "857a72cb3305e0e94f081bfaf66bb44f296400c839a829507d6f12f4023d0118" },
-    { id: "win-setup", folder: "Windows-安装版", baidu: { url: "https://pan.baidu.com/s/1xdbGyOn4rwzSJufiIPFjEA", code: "8c9p" }, title: "Windows · 安装版", sub: "Windows 10 / 11（64 位）", file: "AndroidAdCleaner-0.2.5-windows-setup.exe", size: "30.1 MB",
-      note: "弹出安全提示时点「更多信息」→「仍要运行」", sha: "7cdccad50aee1d3156799c1ec9ed06bc32c846a02c98721a5a33ceda470ca4ff" },
-    { id: "win-zip", folder: "Windows-免安装版", baidu: { url: "https://pan.baidu.com/s/1MJGXCuZ0fuxglPpqdmJjgw", code: "ey5a" }, title: "Windows · 免安装", sub: "Windows 10 / 11（64 位）", file: "AndroidAdCleaner-0.2.5-windows-portable.zip", size: "44.8 MB",
-      note: "解压后双击 AndroidAdCleaner.exe", sha: "93180c0fe16664c090314ab035e3934183a70f2ffae9eaf2806812bfd5b64ccc" },
+    { id: "mac-arm64", folder: "Mac-Apple芯片", baidu: { url: "https://pan.baidu.com/s/1_v2AqLWZpCccJuIUmPo7AQ", code: "req0" }, title: "Mac · Apple 芯片", sub: "M1 / M2 / M3 / M4 及以后", file: "AndroidAdCleaner-0.2.6-mac-arm64.dmg", size: "34.4 MB",
+      note: "苹果公证通过，双击打开", sha: "3bccdbfa13e4de75e8e0e11a207efbe9ea5626809c3263a96ace9b117b7bf0a7" },
+    { id: "mac-intel", folder: "Mac-Intel芯片", baidu: { url: "https://pan.baidu.com/s/1-fZ8YBQYeZ3W1EONKujf2g", code: "xfp3" }, title: "Mac · Intel 芯片", sub: "2020 年及以前的 Intel Mac，macOS 11 及以上", file: "AndroidAdCleaner-0.2.6-mac-intel.dmg", size: "40.3 MB",
+      note: "苹果公证通过，双击打开", sha: "69a4daa93b0a00a7c26b61de3d1b3f734e1b702a93dc9c087a98a121a2951439" },
+    { id: "win-setup", folder: "Windows-安装版", baidu: { url: "https://pan.baidu.com/s/1DGGBGybih5t70_A1mbCsKA", code: "w7xv" }, title: "Windows · 安装版", sub: "Windows 10 / 11（64 位）", file: "AndroidAdCleaner-0.2.6-windows-setup.exe", size: "30.2 MB",
+      note: "弹出安全提示时点「更多信息」→「仍要运行」", sha: "2bcf33dbd0069e9f9bfe3bbab9a4364e9718fb2a806d6ed30176e08bde3b5e90" },
+    { id: "win-zip", folder: "Windows-免安装版", baidu: { url: "https://pan.baidu.com/s/124MEtTPHPzqtV6xvLU8aUg", code: "4t44" }, title: "Windows · 免安装", sub: "Windows 10 / 11（64 位）", file: "AndroidAdCleaner-0.2.6-windows-portable.zip", size: "44.9 MB",
+      note: "解压后双击 AndroidAdCleaner.exe", sha: "ab7be5ce5a335c26f134fba62d97c57321e32d280b4a60a52e382137c546efb6" },
   ],
 };
-const RELEASED = "2026-10-27";
+const RELEASED = "2026-10-28";
 const REPO = "https://github.com/rddmwmddr/android-ad-cleaner";
 
 const PROMPTS = {
