@@ -5,7 +5,7 @@
 | OPPO / 一加 / realme | [OPPO-ColorOS.md](OPPO-ColorOS.md) | Find N6、Find X10 Pro Max、Find X9 Ultra（部分）、Find N3 典藏版（部分） |
 | 荣耀 | [荣耀-MagicOS.md](荣耀-MagicOS.md) | PNM-AN10 |
 | 小米 / Redmi | [小米-HyperOS.md](小米-HyperOS.md) | Xiaomi 18 Pro Max |
-| vivo / iQOO | [vivo-OriginOS.md](vivo-OriginOS.md) | X300 Ultra |
+| vivo / iQOO | [vivo-OriginOS.md](vivo-OriginOS.md) | X300 Ultra（V2547DA、V2547A） |
 
 ## 怎么读
 
