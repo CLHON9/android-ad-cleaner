@@ -8,7 +8,7 @@
 
 插上手机，点几下按钮。不需要 Python，也不需要 AI 工具。
 
-> **v0.2.5 · 2026-10-27**：新增错误日志上报。执行失败时，不需要 GitHub 账号也能把日志发给维护者；发送前原样展示全部内容，确认后发送。序列号、用户目录、邮箱、手机号、IP 在客户端和服务器各替换一遍，服务器保存 90 天。0.2.4 的修复全部保留。旧版不会自动更新，请重新下载，已有备份会保留。详见 [更新记录](CHANGELOG.md) 和 [错误日志上报](docs/12-错误日志上报.md)。官网：https://ahuamiao.com/sites/other/android-ad-removal-intro.html
+> **v0.2.6 · 2026-10-28**：按 0.2.5 收到的 122 份错误日志修复：手机锁屏时等你解锁后继续，不再整步失败；系统锁定的灰色通知渠道不算失败；OPPO、一加、realme 锁屏能认出；手机断开后不再每一步重复报错；vivo OriginOS 3、华为渠道页、小米断网接口三处兼容。新增 9 个社区机型脚本（红米 K80 至尊版、K90 Pro Max、K70、Note 14 Pro、Note 12 Turbo，vivo X300 Ultra OriginOS 7、iQOO V2324HA、vivo V2361A，一加 Ace 2）。旧版不会自动更新，请重新下载，已有备份会保留。详见 [更新记录](CHANGELOG.md)，错误日志上报说明见 [这里](docs/12-错误日志上报.md)。官网：https://ahuamiao.com/sites/other/android-ad-removal-intro.html
 
 此前版本已处理 Windows 本地页面超时、荣耀截图越界、通知渠道误操作风险、vivo 快应用与备份问题。各 Issue 的处理范围和待验证项见 [社区问题处理记录](docs/09-社区问题处理.md)。仅支持通过 adb 连接的安卓设备，暂不支持使用 HDC 的原生鸿蒙。
 
