@@ -2,6 +2,16 @@
 
 本仓库的操作规范写在 [AGENTS.md](AGENTS.md)。开工前读完它。
 
+## 2026-10-28 0.2.6 当天的错误日志与三项新功能（未发布）
+
+- 0.2.6 发布后 4 小时 33 份报告，归类与处理见 CHANGELOG「未发布」。华为 / 旧版荣耀 9 份是真问题：0.2.6 找到的「行」是一张卡片，里面不止一个开关；`own_row()` 从渠道名往上找第一个只含一个开关的控件。卡片结构是推断，失败时日志带 `chain()` 控件链（不含文字），下一轮上报核对。
+- vivo：直达渠道页按规则不能直接用，认出 vivo（`p.vivo_seen`）后不再走直达链接；`via_app_page` 等上一页换下去（`titled()`）再读。OriginOS Ocean 的通知页在 `com.android.systemui`，读它时 `p.sysui=True`。
+- 一批跑完后「未确认」类失败重试一次（本机关成功过、最多 10 个）。读屏库的断线异常经 `adb_link.lost_from()` 认成断开。
+- 软件名：`tool/applabels.dex`（源码 `tool/applabels/`，`build.sh` 重建）经 `app_process` 读应用名，用完删除；只进界面和清单第四列，不进日志。
+- 暂停：`AAC_PAUSE_FILE` 存在时 `fast.pause_point()` 等待。安全位置只有三处：机型脚本段首的锁屏检查、营销通知两个渠道之间、客户端两步之间。chan_fast 里把 `pause_at_lock_check` 关掉，渠道里面的锁屏检查不暂停。停止后仍跑收尾。
+- 新版本提示读 OSS 上的 `android-ad-cleaner-latest.json`，发版后要更新它（步骤记在本机 `CLAUDE.local.md`）。
+- 237 项回归通过；模拟器验证读名、扫描、关闭 / 暂停 / 继续 / 还原。华为、旧版荣耀、vivo 没有真机。
+
 ## 2026-10-28 错误日志与社区 PR（0.2.6，已发布）
 
 - 0.2.5 上线一天收到 122 份确认上报的错误日志，归类与处理见 CHANGELOG「未发布」。原始日志只在本机被忽略的 `.private/`，不进仓库。

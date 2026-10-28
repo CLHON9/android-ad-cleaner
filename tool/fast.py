@@ -35,6 +35,20 @@ class ScreenLocked(RuntimeError):
     """手机锁屏了：调用方等机主解锁，或停下整批，不逐项报同一个原因。"""
 
 
+def pause_point():
+    """客户端点了「暂停」（创建 AAC_PAUSE_FILE）就在这里等，点「继续」（删掉文件）再往下走；暂停过返回 True。
+    只放在安全的位置：机型脚本每段开始前（段首的锁屏检查）、营销通知每个渠道开始前。
+    暂停期间不读屏、不点击；继续后重新读页面，不用暂停前的坐标。"""
+    path = os.environ.get("AAC_PAUSE_FILE")
+    if not path or not os.path.exists(path):
+        return False
+    print("⏸ 已暂停：现在可以操作手机。操作完回到桌面、保持解锁，再点「继续」", flush=True)
+    while os.path.exists(path):
+        time.sleep(0.5)
+    print("▶ 继续执行", flush=True)
+    return True
+
+
 def bounds(n):
     m = BOUNDS.match(n.get("bounds", ""))
     return tuple(map(int, m.groups())) if m else (0, 0, 0, 0)
@@ -88,6 +102,7 @@ class Phone:
             self.d.close()
             raise
         self.log = log
+        self.pause_at_lock_check = True     # 机型脚本每段开头都查锁屏：这里就是段与段之间，可以暂停
         self.changed = []          # (页面, 标题) 记录本次关掉的
         self.miss = 0              # 本段已经没找到几次；>0 说明路径对不上，后面只看当前屏、不再翻页找
 
@@ -238,6 +253,8 @@ class Phone:
         return rows
 
     def locked(self):
+        if getattr(self, "pause_at_lock_check", False) and pause_point():
+            return not self.wait_unlocked()      # 暂停时机主可能锁了屏：亮屏等他解锁
         out = self.d.shell(adb_link.KEYGUARD_CMD).output
         if adb_link.focus_window(out) == "NotificationShade" and not adb_link.LOCK_FIELD.search(out):
             # 可能只是通知栏被拉下来了：收起后再看；锁屏界面收不起来，焦点仍是 NotificationShade
@@ -750,6 +767,12 @@ def main():
     except RuntimeError as e:
         # 断线、读屏服务被占用、启动失败：给出原因，不打印 Python 报错堆栈（错误日志 10-27）
         print(f"✗ {e}", flush=True)
+        sys.exit(1)
+    except Exception as e:
+        gone = adb_link.lost_from(e, a[1])     # 读屏库的断线异常不是 RuntimeError（错误日志 10-28）
+        if gone is None:
+            raise
+        print(f"✗ {gone}", flush=True)
         sys.exit(1)
 
 

@@ -11,8 +11,8 @@ import subprocess
 # Windows 上程序名有时显示成「adb.」（错误日志 10-27）。
 CLIENT_GONE = re.compile(r"(?mi)^(?:adb[\w.]*|error): .*(?:not found|offline|no devices|unauthorized|authorizing"
                          r"|cannot connect|closed|protocol fault|connection reset)")
-# uiautomator2 / adbutils 直接连 adb 服务，错误没有前缀。
-LIB_GONE = re.compile(r"device '[^']*' not found|device offline|no devices/emulators found|device still authorizing", re.I)
+# uiautomator2 / adbutils 直接连 adb 服务，错误没有前缀。整条消息只有「closed」是 adb 服务关掉了连接（错误日志 10-28）。
+LIB_GONE = re.compile(r"device '[^']*' not found|device offline|no devices/emulators found|device still authorizing|\Aclosed\Z", re.I)
 
 HINT = ("手机和电脑的 adb 连接断开了，本步骤没有完成。请逐项排查后重试：\n"
         "· 退出电脑上的手机助手类软件（各品牌手机助手、应用宝、360 手机助手、豌豆荚、爱思助手、刷机工具）和安卓模拟器。"
@@ -98,3 +98,17 @@ def keyguard_showing(out):
 def lost(detail=""):
     detail = (detail or "").strip()
     return DeviceLost(HINT + (f"\n原始错误：{detail[-200:]}" if detail else ""))
+
+
+def lost_from(error, serial, adb=None):
+    """读屏库的异常（HTTPError、AdbShellError 等，不是 RuntimeError）说设备不在、手机也确实不在列表里
+    → 返回 DeviceLost，由调用方抛出；否则返回 None。以前这类异常一路带着堆栈打到界面上（错误日志 10-28）。"""
+    seen, e = set(), error
+    while e is not None and id(e) not in seen:
+        seen.add(id(e))
+        if isinstance(e, DeviceLost):
+            return e
+        if lib_gone(str(e)) and serial and not present(serial, adb):
+            return lost(f"{type(error).__name__}: {error}")
+        e = e.__cause__ or e.__context__
+    return None

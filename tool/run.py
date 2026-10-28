@@ -436,7 +436,7 @@ def main():
         out = result.stdout
         f = os.path.join(d, "channels.tsv")
         Path(f).write_text(
-            "# 包名\t渠道id\t渠道名。人工核对：删掉服务类（热点共享、红包、防盗、直播提醒等）后再 chan-off\n" + out, encoding="utf-8")
+            "# 包名\t渠道id\t渠道名\t应用名。人工核对：删掉服务类（热点共享、红包、防盗、直播提醒等）后再 chan-off\n" + out, encoding="utf-8")
         print(out); print(f"候选清单：{display_backup_path(f)}（共 {out.count(chr(10))} 条）")
 
     elif cmd in ("chan-off", "chan-on"):
