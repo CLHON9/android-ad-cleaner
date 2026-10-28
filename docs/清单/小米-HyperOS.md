@@ -7,8 +7,11 @@
 |---|---|---|
 | Xiaomi 18 Pro Max（M154FF） | HyperOS OS4.0.24，Android 17 | 2026-10-22 实测；2026-10-25 九段脚本重跑通过 |
 | Xiaomi 18 Fold（2608BPX34C） | CP2A.260605.016，Android 17 | 2026-10-24 社区实测（[Issue #2](https://github.com/rddmwmddr/android-ad-cleaner/issues/2)） |
+| REDMI K80 至尊版（25060RK16C） | HyperOS 2（BP2A.250605.031.A3），Android 16 | 2026-10-27 真机实测；专用脚本九段全通过并回读（recipes/redmi-25060RK16C） |
 
 两台系统底包相同，差别在 App 版本：商店、浏览器、全局搜索、手机管家升级后入口变了。下面每一项都写了「旧版 / 新版」两种入口，按你手机上看到的选。
+
+REDMI K80 至尊版（HyperOS 2 / Android 16）结构差异：「隐私与安全」首页是权限中心，没有「更多安全设置」，广告服务用设置顶部搜索直达；商店冷启动可能落「福利推广页」，先点「回到首页」再走「我的」；主题商店直接拉 com.android.thememanager/.ThemeResourceProxyTabActivity 最稳（themestore 冷启动的重定向过渡窗会让引擎前台校验误判）；主题/商店底部标签的无障碍名带「未选中,」前缀，要按屏幕底部位置点。
 
 ---
 
