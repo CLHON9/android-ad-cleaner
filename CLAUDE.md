@@ -2,7 +2,7 @@
 
 本仓库的操作规范写在 [AGENTS.md](AGENTS.md)。开工前读完它。
 
-## 2026-10-28 错误日志与社区 PR（源码，未发版）
+## 2026-10-28 错误日志与社区 PR（0.2.6，已发布）
 
 - 0.2.5 上线一天收到 122 份确认上报的错误日志，归类与处理见 CHANGELOG「未发布」。原始日志只在本机被忽略的 `.private/`，不进仓库。
 - 锁屏判断统一在 `adb_link.keyguard_showing()`：ColorOS 没有 `isKeyguardShowing`，焦点在 NotificationShade 又没有锁屏字段就按锁屏处理；通知栏被拉下时先 `cmd statusbar collapse`。锁屏时点亮屏幕等机主解锁（`wait_unlocked`），不代替解锁。
