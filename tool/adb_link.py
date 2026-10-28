@@ -8,7 +8,8 @@ import shutil
 import subprocess
 
 # adb 客户端自己的错误（远端命令的 stderr 不会带这些前缀）。
-CLIENT_GONE = re.compile(r"(?mi)^(?:adb(?:\.exe)?|error): .*(?:not found|offline|no devices|unauthorized|authorizing"
+# Windows 上程序名有时显示成「adb.」（错误日志 10-27）。
+CLIENT_GONE = re.compile(r"(?mi)^(?:adb[\w.]*|error): .*(?:not found|offline|no devices|unauthorized|authorizing"
                          r"|cannot connect|closed|protocol fault|connection reset)")
 # uiautomator2 / adbutils 直接连 adb 服务，错误没有前缀。
 LIB_GONE = re.compile(r"device '[^']*' not found|device offline|no devices/emulators found|device still authorizing", re.I)
@@ -54,6 +55,44 @@ def wait_for(serial, adb=None, timeout=15):
 
 class DeviceLost(RuntimeError):
     pass
+
+
+def present(serial, adb=None):
+    """手机此刻是否在 adb 设备列表里（状态为 device）。"""
+    adb = adb or adb_path()
+    if not adb:
+        return False
+    try:
+        result = subprocess.run([adb, "-s", serial, "get-state"], capture_output=True, text=True,
+                                timeout=8, creationflags=NOWIN)
+        return result.stdout.strip() == "device"
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
+# 锁屏判断。只认字段名，不整行找 true（HyperOS 3 同一行有别的 =true 字段，#115）。
+# ColorOS 16/17 没有 isKeyguardShowing：锁屏时焦点窗口是 NotificationShade（错误日志 10-27，9 份报告）。
+KEYGUARD_CMD = "dumpsys window | grep -E 'mCurrentFocus|isKeyguardShowing|mDreamingLockscreen|mIsShowing=' | head -12"
+SHADE_WINDOWS = {"NotificationShade", "StatusBar", "Keyguard", "KeyguardBouncer", "Bouncer"}
+
+
+def focus_window(out):
+    m = re.search(r"mCurrentFocus=.*? u0 ([^\s}]+)", out or "") or re.search(r"mCurrentFocus=Window\{\S+ ([^\s}]+)\}", out or "")
+    return m.group(1) if m else ""
+
+
+LOCK_FIELD = re.compile(r"(?:isKeyguardShowing|mDreamingLockscreen)[=:]\s*true")
+UNLOCK_FIELD = re.compile(r"isKeyguardShowing[=:]\s*false|\bmIsShowing=false")
+
+
+def keyguard_showing(out):
+    """KEYGUARD_CMD 的输出 → 是否锁屏。焦点在通知栏窗口时：有锁屏字段按字段判断；字段都没有，按锁屏处理。"""
+    out = out or ""
+    if LOCK_FIELD.search(out):
+        return True
+    if focus_window(out) not in SHADE_WINDOWS:
+        return False
+    return bool(re.search(r"\bmIsShowing=true", out)) or not UNLOCK_FIELD.search(out)
 
 
 def lost(detail=""):

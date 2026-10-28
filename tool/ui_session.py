@@ -19,7 +19,7 @@ class DeviceBusyError(RuntimeError):
 
 
 class DeviceLock:
-    def __init__(self, serial):
+    def __init__(self, serial, wait=20):
         # 不用序列号做文件名；不删除锁文件，避免另一个进程锁住不同 inode。
         name = hashlib.sha256(serial.encode("utf-8")).hexdigest()
         directory = Path(tempfile.gettempdir()) / "android-ad-cleaner-locks"
@@ -28,17 +28,24 @@ class DeviceLock:
         self.file.seek(0, 2)
         if not self.file.tell():
             self.file.write(b"0"); self.file.flush()
-        self.file.seek(0)
-        try:
-            if os.name == "nt":
-                import msvcrt
-                msvcrt.locking(self.file.fileno(), msvcrt.LK_NBLCK, 1)
-            else:
-                import fcntl
-                fcntl.flock(self.file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except OSError as e:
-            self.file.close()
-            raise DeviceBusyError("本电脑另一个去广告任务正在使用这台手机的读屏服务，请结束该任务后重试。") from e
+        # 上一步的读屏进程可能还在退出：等它释放，最多 20 秒（错误日志 10-27：下一步一开始就报占用）。
+        deadline = time.time() + wait
+        while True:
+            self.file.seek(0)
+            try:
+                if os.name == "nt":
+                    import msvcrt
+                    msvcrt.locking(self.file.fileno(), msvcrt.LK_NBLCK, 1)
+                else:
+                    import fcntl
+                    fcntl.flock(self.file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                return
+            except OSError as e:
+                if time.time() < deadline:
+                    time.sleep(0.5)
+                    continue
+                self.file.close()
+                raise DeviceBusyError("本电脑另一个去广告任务正在使用这台手机的读屏服务，请结束该任务后重试。") from e
 
     def close(self):
         if not self.file.closed:

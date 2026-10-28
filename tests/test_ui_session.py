@@ -9,6 +9,7 @@ import sys
 import tempfile
 import threading
 import unittest
+import time
 import uuid
 from unittest.mock import Mock, patch
 
@@ -29,7 +30,11 @@ class LockTests(unittest.TestCase):
         try:
             self.assertEqual(child.stdout.readline().strip(), "locked")
             with self.assertRaises(session.DeviceBusyError):
-                session.DeviceLock(serial)
+                session.DeviceLock(serial, wait=0)
+            started = time.time()
+            with self.assertRaises(session.DeviceBusyError):
+                session.DeviceLock(serial, wait=1)    # 先等一会儿，等不到才报占用
+            self.assertGreaterEqual(time.time() - started, 0.9)
             other = session.DeviceLock(serial + "-different-device")
             other.close()
             child.terminate(); child.wait(timeout=10)
@@ -132,9 +137,11 @@ class LifecycleTests(unittest.TestCase):
         with patch.object(fast, "connect", return_value=d), \
              patch.object(fast, "execute", side_effect=RuntimeError("failed step")), \
              patch.object(sys, "argv", ["fast.py", "-s", "test", "check"]), \
-             contextlib.redirect_stdout(io.StringIO()):
-            with self.assertRaisesRegex(RuntimeError, "failed step"):
+             contextlib.redirect_stdout(io.StringIO()) as out:
+            with self.assertRaises(SystemExit) as stop:
                 fast.main()
+        self.assertEqual(stop.exception.code, 1)
+        self.assertIn("✗ failed step", out.getvalue())      # 给出原因，不打印报错堆栈
         d.close.assert_called_once()
 
     def test_phone_setup_failure_closes_connected_service(self):

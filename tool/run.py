@@ -18,7 +18,7 @@
   python3 tool/run.py -s 序列号 dev-off --yes      从电脑上关闭开发者模式和 USB 调试（执行后电脑与手机断开）
   python3 tool/run.py -s 序列号 status-json        只读：一次输出全部状态（JSON，给图形界面用）
 """
-import datetime, glob, json, os, re, shutil, subprocess, sys
+import datetime, glob, json, os, re, shutil, subprocess, sys, time
 from pathlib import Path
 for _st in (sys.stdout, sys.stderr):
     try:
@@ -142,6 +142,9 @@ def info(serial):
 
 FAMILY = {"oppo": "oppo", "oneplus": "oppo", "realme": "oppo", "honor": "honor",
           "xiaomi": "xiaomi", "redmi": "xiaomi", "poco": "xiaomi", "vivo": "vivo", "iqoo": "vivo"}
+# 没有本型号脚本时用的同品牌参考脚本。以前取目录名排第一的那份，社区每加一个机型，
+# 别的手机用的参考脚本就可能跟着变（10-28 合并社区机型脚本时发现）；固定成维护者实测最全的一份。
+REFERENCE = {"oppo": "oppo-PLP120", "honor": "honor-PNM-AN10", "xiaomi": "xiaomi-M154FF", "vivo": "vivo-V2547DA"}
 
 
 def recipe_meta(path):
@@ -161,6 +164,9 @@ def recipe_for(model, brand=""):
         if d.endswith("-" + model) or model in recipe_meta(r)["models"]:
             return r, False
     fam = FAMILY.get((brand or "").lower())
+    preferred = os.path.join(ROOT, "recipes", REFERENCE.get(fam, ""), "recipe.py")
+    if fam in REFERENCE and os.path.exists(preferred):
+        return preferred, True
     for r in allr:
         if fam and os.path.basename(os.path.dirname(r)).startswith(fam + "-"):
             return r, True
@@ -180,8 +186,22 @@ def input_blocked(serial, brand):
 
 
 def locked(serial):
-    return "isKeyguardShowing=true" in sh(serial, "dumpsys window | grep -m1 isKeyguardShowing") or \
-           "mDreamingLockscreen=true" in sh(serial, "dumpsys window | grep -m1 mDreamingLockscreen")
+    return adb_link.keyguard_showing(sh(serial, adb_link.KEYGUARD_CMD))
+
+
+def wait_unlocked(serial, timeout=90):
+    """锁屏时点亮屏幕，等机主解锁（不代替解锁）。开始执行时手机已锁屏的报告约 15 份（错误日志 10-27）。"""
+    sh(serial, "input keyevent KEYCODE_WAKEUP")
+    if not locked(serial):
+        return True
+    print(f"  ! 手机锁屏了：请解锁手机并保持亮屏，解锁后自动继续（最多等 {timeout} 秒）", flush=True)
+    t = time.time()
+    while time.time() - t < timeout:
+        time.sleep(1)
+        if not locked(serial):
+            time.sleep(0.8)
+            return True
+    return False
 
 
 def latest_backup(serial, create=False):
@@ -393,14 +413,14 @@ def main():
         if not r or (ref and not use_ref):
             sys.exit("这个型号没有机型脚本。" + (f"同品牌有参考脚本 {os.path.relpath(r, ROOT)}，加 --ref 试用。" if r else "") +
                      "写法见 docs/04-给新机型写脚本.md")
-        if locked(s):
-            sys.exit("手机锁屏了，请机主解锁后再跑")
         if ref or not build_ok(i, recipe_meta(r)["build"]):
             os.environ["AAC_REF"] = "1"                 # 安全模式：fast.py 不做整页全关
             print("⚠ 安全模式：这份机型脚本不是按这台的型号和系统版本录的。只关脚本里点名的开关，找不到入口的步骤跳过。")
         stay_on = sh(s, "settings get global stay_on_while_plugged_in")
         try:
             sh(s, "settings put global stay_on_while_plugged_in 7")
+            if not wait_unlocked(s):
+                sys.exit("✗ 手机一直锁屏，本步骤没有执行。请解锁手机、保持亮屏后重试")
             rc = py("fast.py", "-s", s, "run", r, *rest)
         finally:
             sh(s, f"settings put global stay_on_while_plugged_in {int(stay_on) if stay_on.isdigit() else 0}")
@@ -439,8 +459,13 @@ def main():
                     if p == MSA:
                         sh(s, f"am force-stop {p}")
                         network = msa_net(s, False)
-                        extra = "，已禁止联网" if network["ok"] else "；部分完成：" + network["reason"]
-                        if not network["ok"]:
+                        if network["ok"]:
+                            extra = "，已禁止联网"
+                        elif not network["supported"]:
+                            # 系统没有这个接口，用户也改不了：挂起已完成，不算失败（错误日志 10-27，7 份报告）
+                            extra = "（这台手机的系统没有 msa 断网接口，只做了挂起）"
+                        else:
+                            extra = "；部分完成：" + network["reason"]
                             fail += 1
                     print(f"  {p}：已挂起{extra}")
                 else:

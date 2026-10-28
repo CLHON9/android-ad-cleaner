@@ -71,8 +71,10 @@ class ReadOnlyTests(unittest.TestCase):
                  patch.object(fast, "connect", side_effect=fast.u2.exceptions.LaunchUiAutomationError("java.lang.IllegalStateException: example")), \
                  patch.object(sys, "argv", ["chan_fast.py", "-s", "test", "off", str(path)]), \
                  contextlib.redirect_stdout(io.StringIO()):
-                with self.assertRaisesRegex(RuntimeError, "读屏服务.*启动失败"):
+                with self.assertRaises(SystemExit) as stop:
                     chan.main()
+            # 不打印 Python 报错堆栈，原因和客户端识别用的标记（LaunchUiAutomationError）仍在
+            self.assertRegex(str(stop.exception.code), r"读屏服务.*启动失败[\s\S]*LaunchUiAutomationError")
 
     def test_adb_failure_is_not_empty_success(self):
         result = SimpleNamespace(returncode=1, stdout="", stderr="device unauthorized")

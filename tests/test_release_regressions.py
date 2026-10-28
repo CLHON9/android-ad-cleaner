@@ -128,13 +128,26 @@ class MsaTests(unittest.TestCase):
              patch.object(run, "latest_backup", return_value=directory), \
              patch.object(run, "suspended", return_value=True), \
              patch.object(run, "sh_all", return_value="success"), patch.object(run, "sh"), \
-             patch.object(run, "msa_net", return_value={"ok": False, "supported": False, "reason": "不支持断网"}), \
+             patch.object(run, "msa_net", return_value={"ok": False, "supported": True, "reason": "系统拒绝"}), \
              patch.object(sys, "argv", ["run.py", "-s", "test", "suspend", run.MSA]), \
              contextlib.redirect_stdout(io.StringIO()) as output:
             with self.assertRaises(SystemExit) as raised:
                 run.main()
             self.assertEqual(raised.exception.code, 1)
             self.assertIn("部分完成", output.getvalue())
+            self.assertIn(run.MSA, Path(directory, "suspended.txt").read_text())
+
+    def test_missing_network_interface_is_not_a_failure(self):
+        # 错误日志 10-27：7 份小米报告因系统没有断网接口被标成失败，用户改不了
+        with tempfile.TemporaryDirectory() as directory, \
+             patch.object(run, "latest_backup", return_value=directory), \
+             patch.object(run, "suspended", return_value=True), \
+             patch.object(run, "sh_all", return_value="success"), patch.object(run, "sh"), \
+             patch.object(run, "msa_net", return_value={"ok": False, "supported": False, "reason": "不支持断网"}), \
+             patch.object(sys, "argv", ["run.py", "-s", "test", "suspend", run.MSA]), \
+             contextlib.redirect_stdout(io.StringIO()) as output:
+            run.main()
+            self.assertIn("只做了挂起", output.getvalue())
             self.assertIn(run.MSA, Path(directory, "suspended.txt").read_text())
 
 

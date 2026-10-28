@@ -17,6 +17,7 @@ for _st in (sys.stdout, sys.stderr):
         _st.reconfigure(encoding="utf-8", errors="replace")   # Windows 控制台默认不是 UTF-8
     except Exception:
         pass
+import adbutils
 import uiautomator2 as u2
 from ui_session import connect
 from troubleshooting import UI_RECOVERY, XIAOMI_INPUT, accessibility_summary, input_blocked
@@ -28,6 +29,10 @@ CONFIRM = ("确定", "关闭", "仍要关闭", "确认关闭", "确认", "继续
 PERMISSION_CONTROLLERS = {"com.android.permissioncontroller", "com.google.android.permissioncontroller"}
 # 输入框：荣耀 MagicOS 10（PNM-AN10 10.0.0.102）设置搜索框是 AutoCompleteTextView，类名里没有 EditText
 EDIT = re.compile(r"EditText|AutoCompleteTextView")
+
+
+class ScreenLocked(RuntimeError):
+    """手机锁屏了：调用方等机主解锁，或停下整批，不逐项报同一个原因。"""
 
 
 def bounds(n):
@@ -64,6 +69,13 @@ class Phone:
             raise RuntimeError("手机读屏服务（UiAutomation）启动失败，本次未点击开关。"
                                f"\n{accessibility_summary(serial)}\n{UI_RECOVERY}\n"
                                f"原始异常：{type(e).__name__}: {e}") from e
+        except (u2.exceptions.AdbShellError, adbutils.AdbError) as e:
+            # 读屏服务文件传不进手机（adb push 返回 FAIL）或命令无回应：多半是连接中途断了（错误日志 10-27）。
+            if not adb_link.present(serial):
+                raise adb_link.lost(f"{type(e).__name__}: {e}") from e
+            raise RuntimeError("读屏服务没能装到手机上（adb 传文件失败），本次未点击开关。请拔插数据线、"
+                               "退出电脑上的手机助手类软件后重试；仍失败请重启手机。"
+                               f"\n原始异常：{type(e).__name__}: {str(e)[:200]}") from e
         self.serial, self.lost = serial, False
         self._shell, self.d.shell = self.d.shell, self._resilient_shell
         try:
@@ -86,7 +98,8 @@ class Phone:
         try:
             return self._shell(*args, **kwargs)
         except Exception as e:
-            if not adb_link.lib_gone(str(e)):
+            # 「shell output invalid … b''」：命令没有任何回应，连接正在断开（错误日志 10-27）。
+            if not (adb_link.lib_gone(str(e)) or (isinstance(e, u2.exceptions.AdbShellError) and "output invalid" in str(e))):
                 raise
             if not adb_link.wait_for(self.serial):
                 self.lost = True
@@ -116,7 +129,7 @@ class Phone:
     def focus(self):
         """当前焦点窗口（~0.1 秒；u2 的 app_current 在浮窗上会卡 10 秒）。"""
         out = self.d.shell("dumpsys window | grep -m1 mCurrentFocus").output
-        m = re.search(r"u0 (\S+)}", out)
+        m = re.search(r"u0 ([^\s}]+)", out)     # vivo OriginOS 3 / Android 13 行尾是「Activity}}」（错误日志 10-27）
         if m:
             return m.group(1)
         out = self.d.shell("dumpsys activity activities | grep -m1 topResumedActivity").output
@@ -225,9 +238,28 @@ class Phone:
         return rows
 
     def locked(self):
-        # 只认 isKeyguardShowing=true。HyperOS 3 这一行还有其他 =true 字段，以前整行找 "true" 会误报锁屏（#115）。
-        out = self.d.shell("dumpsys window | grep -m1 isKeyguardShowing").output
-        return bool(re.search(r"isKeyguardShowing[=:]\s*true", out))
+        out = self.d.shell(adb_link.KEYGUARD_CMD).output
+        if adb_link.focus_window(out) == "NotificationShade" and not adb_link.LOCK_FIELD.search(out):
+            # 可能只是通知栏被拉下来了：收起后再看；锁屏界面收不起来，焦点仍是 NotificationShade
+            self.d.shell("cmd statusbar collapse")
+            time.sleep(0.4)
+            out = self.d.shell(adb_link.KEYGUARD_CMD).output
+        return adb_link.keyguard_showing(out)
+
+    def wait_unlocked(self, timeout=90):
+        """锁屏时点亮屏幕，等机主解锁（不代替解锁）。等到了返回 True。
+        错误日志 10-27：约 15 份报告在开始执行时手机已锁屏，以前直接报失败，后面每一项都重复「锁屏了」。"""
+        self.d.shell("input keyevent KEYCODE_WAKEUP")
+        if not self.locked():
+            return True
+        print(f"  ! 手机锁屏了：请解锁手机并保持亮屏，解锁后自动继续（最多等 {timeout} 秒）", flush=True)
+        t = time.time()
+        while time.time() - t < timeout:
+            time.sleep(1)
+            if not self.locked():
+                time.sleep(0.8)
+                return True
+        return False
 
     def sig(self):
         return "|".join(t for t, _, _ in self.texts())
@@ -712,8 +744,13 @@ def main():
         print(__doc__); return
     if len(a) < 3 or a[0] != "-s":
         print(__doc__); sys.exit(1)
-    with Phone(a[1]) as p:
-        execute(p, a[2], a[3:])
+    try:
+        with Phone(a[1]) as p:
+            execute(p, a[2], a[3:])
+    except RuntimeError as e:
+        # 断线、读屏服务被占用、启动失败：给出原因，不打印 Python 报错堆栈（错误日志 10-27）
+        print(f"✗ {e}", flush=True)
+        sys.exit(1)
 
 
 def execute(p, cmd, rest):
@@ -749,8 +786,8 @@ def execute(p, cmd, rest):
         t = time.time(); n = p.off(only=rest[0].split(","))
         print(f"关了 {n} 个，{time.time()-t:.1f} 秒")
     elif cmd == "run":
-        if p.locked():
-            print("✗ 手机锁屏了，先解锁再跑"); sys.exit(2)
+        if not p.wait_unlocked():
+            print("✗ 手机一直锁屏，本步骤没有执行。请解锁手机、保持亮屏后重试"); sys.exit(2)
         g = {"p": p, "__name__": "__recipe__", "ONLY": rest[1:]}
         with open(rest[0], encoding="utf-8") as f:
             src = f.read()

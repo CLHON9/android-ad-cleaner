@@ -98,6 +98,19 @@ def find_adb():
     return None
 
 
+def adb_present(adb, serial):
+    """手机此刻是否连着（adb 状态为 device）；先给它 10 秒回来。"""
+    if not adb:
+        return False
+    try:
+        subprocess.run([adb, "-s", serial, "wait-for-device"], capture_output=True, timeout=10, creationflags=NOWIN)
+        out = subprocess.run([adb, "-s", serial, "get-state"], capture_output=True, text=True,
+                             timeout=8, creationflags=NOWIN).stdout
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return out.strip() == "device"
+
+
 def child_env(adb):
     e = dict(os.environ)
     e.update({"ADB": adb or "", "ADBUTILS_ADB_PATH": adb or "", "AAC_BACKUPS": BACKUPS,
@@ -231,8 +244,9 @@ REPORT_LIMIT = 3            # 每小时最多上报几次（服务器另有按 I
 PRIVATE = (
     (re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}"), "<邮箱>"),
     (re.compile(r"(?<!\d)1[3-9]\d{9}(?!\d)"), "<手机号>"),
-    (re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}(?::\d{1,5})?\b"), "<IP>"),
-    (re.compile(r"(?:/Users/|/home/|[A-Za-z]:\\Users\\)[^/\\\s'\"]+"), "<用户目录>"),
+    (re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}(?::\d{1,5})?\b(?!\()"), "<IP>"),   # 华为版本号「4.2.0.180(C00…)」不是 IP
+    # 用户目录可能不在 C 盘（360「C 盘搬家」等把它挪到 E:\…\Users\名字），整段路径前缀一起换掉
+    (re.compile(r"(?:[A-Za-z]:)?[^\s'\"<>|]*?[\\/](?:Users|home)[\\/][^/\\\s'\"<>]+", re.I), "<用户目录>"),
 )
 
 
@@ -484,7 +498,15 @@ class Api:
             j["results"].append({"title": title, "rc": rc, "sec": round(time.time() - t), "tail": tail})
             if rc:
                 detail = "\n".join(j["lines"][line_start:])
-                ui_busy = ui_busy or "UIAUTOMATION_BUSY" in detail or "DeviceBusyError" in detail
+                ui_busy = ui_busy or any(m in detail for m in ("UIAUTOMATION_BUSY", "DeviceBusyError", "正在使用这台手机的读屏服务"))
+                if "adb 连接断开了" in detail and not adb_present(self.adb, j["serial"]):
+                    # 手机已断开：后面每一步都会报同一段排查说明（错误日志 10-27），不再执行
+                    self._remember_error(title, j["serial"], detail)
+                    reason = "手机和电脑已断开，这一步没有执行。重新连接手机后点「重试」。"
+                    for later, _, _ in tasks[i + 1:]:
+                        self._log(f"\n▶ {later}\n{reason}")
+                        j["results"].append({"title": later, "rc": 3, "skipped": True, "sec": 0, "tail": [reason]})
+                    break
                 error = self._remember_error(title, j["serial"], detail)
                 if error.get("recovery"):
                     j["recovery"] = error["recovery"]
