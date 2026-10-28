@@ -7,6 +7,7 @@
 |---|---|---|
 | Xiaomi 18 Pro Max（M154FF） | HyperOS OS4.0.24，Android 17 | 2026-10-22 实测；2026-10-25 九段脚本重跑通过 |
 | Xiaomi 18 Fold（2608BPX34C） | CP2A.260605.016，Android 17 | 2026-10-24 社区实测（[Issue #2](https://github.com/rddmwmddr/android-ad-cleaner/issues/2)） |
+| Xiaomi Pad 7（2410CRP4CC） | HyperOS OS2.0.208.0.VOZCNXM，Android 15 | 2026-10-28 实测；四段脚本复跑通过，约 61 秒 |
 | REDMI K80 至尊版（25060RK16C） | HyperOS 2（BP2A.250605.031.A3），Android 16 | 2026-10-27 真机实测；专用脚本九段全通过并回读（recipes/redmi-25060RK16C） |
 | REDMI K90 Pro Max（25102RKBEC） | HyperOS OS4.0.2.0.XPMCNXM，Android 17 | 2026-10-27 实测，九段机型脚本全通过（169 秒） |
 
@@ -15,6 +16,8 @@
 | Redmi K70（23113RKC6C） | HyperOS OS3.0.307.0.WNKCNXM，Android 16 | 2026-10-26 无线+有线：9 段专用脚本；当前目标 20 项；本轮实测含已移除的小说 1 项；浏览器「最新资讯」disabled，未操作 |
 
 Xiaomi 18 Pro Max 和 18 Fold 的系统底包相同，差别在 App 版本：商店、浏览器、全局搜索、手机管家升级后入口变了。Redmi K70 是 HyperOS 3 / Android 16，入口单独记录。下面每一项都写了「旧版 / 新版」两种入口，按你手机上看到的选。
+
+Xiaomi Pad 7 是平板，设置首页左右分栏，差异单独列在文末的[「Pad 7 差异」](#xiaomi-pad-7os20208的差异)。
 
 REDMI K80 至尊版（HyperOS 2 / Android 16）结构差异：「隐私与安全」首页是权限中心，没有「更多安全设置」，广告服务用设置顶部搜索直达；商店冷启动可能落「福利推广页」，先点「回到首页」再走「我的」；主题商店直接拉 com.android.thememanager/.ThemeResourceProxyTabActivity 最稳（themestore 冷启动的重定向过渡窗会让引擎前台校验误判）；主题/商店底部标签的无障碍名带「未选中,」前缀，要按屏幕底部位置点。
 
@@ -132,6 +135,23 @@ adb -s S shell cmd connectivity set-package-networking-enabled true com.miui.sys
 ```
 
 ⚠️ 当前 `unsuspend` 不会恢复共享的 `chain3` 原值；请在挂起前记录 `cmd connectivity get-chain3-enabled` 的结果。若原值是 `disabled`，还原后手动执行 `adb -s S shell cmd connectivity set-chain3-enabled false`；若原值是 `enabled`，保持原值。没有记录时不要猜测，先核对其他网络规则。
+
+---
+
+## Xiaomi Pad 7（OS2.0.208）的差异
+
+平板是 3200×2136 横屏，设置首页是左右分栏，左侧菜单要单独滑动。脚本改用直达 Activity，避免引擎滚到右侧详情栏。下面只列和手机不同的地方：
+
+- **系统广告**：设置 → 隐私与安全 → 顶部「安全」→ 更多安全设置 → 广告服务 → 个性化广告推荐。也可以直接打开 `com.android.settings/.ad.AdServiceSettings`。
+- **应用商店**：顶部标签是 首页 / 游戏 / 榜单 / 我的。我的 → 设置 → 通知设置（只关「新手帮助」，「推送消息」保留）/ 隐私设置 → 个性化服务。
+- **浏览器**：右上「菜单」→ 设置。个性化内容推荐、个性化广告推荐在独立页「个性化推荐设置」（`com.android.browser/.preferences.activity.CustomizationPreferenceActivity`）；主页设置 → 宫格位推送。平板版搜索设置没有「猜你想搜」，功能设置没有「小说」；`Doodle推送` 保留。
+- **负一屏**：设置 → 推荐卡片、热门活动；隐私设置 → 个性化推荐。搜索框保留。
+- **手机管家**：平板管家 → 设置。垃圾清理页没有「推荐内容」，隐私设置页没有「个性化推荐」，无需修改。
+- **下载管理**：设置页没有「信息流设置」，无需修改。
+- **主题**：壁纸与个性化 → 隐私设置只有「本地模式」，没有个性化推荐开关。
+- **全局搜索**：搜索页右上「菜单」→ 搜索设置 → 首页展示模块。本版本只有「展示应用建议」（常用应用，保留），没有热搜榜单 / 搜索提示词。
+- **天气**：设置页没有「用户体验计划」，没有天气视频卡片 / 内容推广开关。天气预警、异常天气提醒保留。
+- **日历**：首次启动要求阅读并同意用户协议与隐私政策。脚本不代为同意，需机主本人决定后再手动检查。
 
 ---
 
