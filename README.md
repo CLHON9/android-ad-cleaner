@@ -97,6 +97,7 @@
 | 小米 | 18 Pro Max（M154FF） | HyperOS 4.0.24 | ✅ 10-25 前轮九段通过，新增兼容改动待复测 | ✅ | ✅ |
 | 小米 | REDMI K80 至尊版（25060RK16C） | HyperOS 2（BP2A.250605.031.A3）/ Android 16 | ✅ 10-27 真机九段通过，重跑 3 分钟 | ✅ | ✅ 3 个渠道 |
 | 小米 | REDMI K90 Pro Max（25102RKBEC） | HyperOS OS4.0.2.0.XPMCNXM / Android 17 | ✅ 10-27 九段实测通过，重跑 169 秒 | ✅ | ✅ 26 个渠道 |
+| 小米 | Redmi Note 14 Pro（24090RA29C） | HyperOS 3.0.309.0 / Android 16 | ✅ 10-26 八段实测通过，整轮约 5 分钟 | ✅ | ✅ 11 个渠道 |
 | vivo | X300 Ultra（V2547DA） | OriginOS 6 | ⚠️ 脚本已补，整段待真机验证 | ✅ | ✅ |
 | vivo（iQOO） | V2324HA | 原系统 Android 16（PD2324J_A_16.2.13.1.W10） | ✅ 2026-10-27 实测，七段全通，重跑 2.5 分钟 | ✅ | 5 个渠道，关 3 个、跳过 1 个 |
 
