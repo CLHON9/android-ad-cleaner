@@ -189,7 +189,8 @@ class Phone:
             if r - l <= 0 or b - t <= 0 or not self.on_screen(n):
                 continue
             cy = (t + b) // 2
-            states = ("开", "关", "已开启", "已关闭", "开启", "关闭", "ON", "OFF")
+            states = ("开", "关", "已开启", "已关闭", "开启", "关闭", "ON", "OFF",
+                      "开启，开关", "关闭，开关", "已开启，开关", "已关闭，开关", "开启，按钮", "关闭，按钮")
             label = (n.get("text") or n.get("content-desc") or "").strip().split("\n", 1)[0]
             label = label if label not in states else ""
             title, p = "", n
@@ -477,12 +478,16 @@ class Phone:
 
     def confirm(self):
         """开关后弹确认框就点确认类按钮。只认真按钮（Button 类），
-        ColorOS 开关旁边的「开启/关闭」状态文字不算——点了会把开关又拨回去。"""
+        ColorOS 开关旁边的「开启/关闭」状态文字不算——点了会把开关又拨回去。
+        支持 vivo/iQOO 等把按钮文字放在 Button 子节点 TextView（vbutton_title）的弹窗。"""
         time.sleep(0.2)
         root = self.tree()
         for c in CONFIRM:
             for n in root.iter("node"):
-                if (n.get("text") or "").strip() == c and "Button" in (n.get("class") or ""):
+                if "Button" not in (n.get("class") or ""):
+                    continue
+                texts = [(x.get("text") or "").strip() for x in n.iter("node") if (x.get("text") or "").strip()]
+                if c in texts:
                     l, t, r, b = bounds(n)
                     if r > l and b > t:
                         self.click((l + r) // 2, (t + b) // 2)
