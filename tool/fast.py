@@ -381,7 +381,8 @@ class Phone:
             key = (n.get("content-desc") or "") + " " + (n.get("resource-id") or "")
             if self.CLOSE.search(key) and not (n.get("text") or "").strip() and not in_list(n):
                 l, t, r, b = bounds(n)
-                if 0 < r - l < self.W * 0.3 and 0 < b - t < self.H * 0.12:   # 小图标，不是整行
+                # 只点屏幕内的图标：屏幕外还留着上一层的节点，点它会抛「点击坐标在屏幕外」把整段打断
+                if 0 < r - l < self.W * 0.3 and 0 < b - t < self.H * 0.12 and self.on_screen(n):
                     self.click((l + r) // 2, (t + b) // 2); time.sleep(0.6)
                     self.say(f"  · 弹窗点了 ✕（{key.strip()[:40]}）")
                     return "✕"
@@ -477,14 +478,16 @@ class Phone:
 
     def confirm(self):
         """开关后弹确认框就点确认类按钮。只认真按钮（Button 类），
-        ColorOS 开关旁边的「开启/关闭」状态文字不算——点了会把开关又拨回去。"""
+        ColorOS 开关旁边的「开启/关闭」状态文字不算——点了会把开关又拨回去。
+        屏幕外的节点跳过：页面里常留着上一层对话框的按钮，点它会抛
+        「点击坐标在屏幕外」把整段打断，真正要点的确认框反而没点（ColorOS 17 主题商店实测）。"""
         time.sleep(0.2)
         root = self.tree()
         for c in CONFIRM:
             for n in root.iter("node"):
                 if (n.get("text") or "").strip() == c and "Button" in (n.get("class") or ""):
                     l, t, r, b = bounds(n)
-                    if r > l and b > t:
+                    if r > l and b > t and self.on_screen(n):
                         self.click((l + r) // 2, (t + b) // 2)
                         time.sleep(0.3)
                         return c
