@@ -169,6 +169,17 @@
 - 主题、视频、游戏中心、负一屏等仍有入口差异；专用脚本只列出已识别的有限范围，不沿用 ColorOS 16 的全部步骤冒充已验证。
 
 本机经机主同意挂起广告服务、乐划和两个快应用组件后，仍观察到部分进程被重新拉起；收尾广告服务仍运行。挂起状态不能作为后台彻底停止的证明，详细状态与还原方法见上述实测记录。
+## 一加 13T（PKX110）
+实测日期：2026-10-28；系统：`PKX110_16.0.10.500(CN01)`，Android 16。
+机型脚本：`recipes/oneplus-PKX110/recipe.py`（广告跟踪、软件商店·服务管理、软件商店·个性化、小布建议四段实测通过；浏览器三段、小布建议幂等重跑均 completed）。
+
+- **广告跟踪**：设置首页点「隐私」进入的是 `com.oplus.securitypermission` 的 `PrivacySettingsDashboardActivity`（不是标准 SubSettings）；「设备标识与广告」在 `OplusSettingsActivity$DevicesIdentifySettingsActivity`；OAID 列表本机 75 项，整页全关 101 秒，引擎翻页正常。
+- **软件商店**：`oppo.intent.action.APP_SETTINGS` 直达 SettingActivity（与 PHK110 一致），服务管理同 Activity；本机推广位约 47 项，除 PHK110 清单外新增：找游戏-休闲/小游戏/VIP、我的专区：账号会员徽章/主题商店/应用时刻/游戏VIP、小游戏二楼和专区、AI智能体、应用安全安全内容推荐等。个性化推荐开关在「隐私（PrivacyActivity）→ 个性化推荐（PersonalRecommendActivity）」二级页；设置页的「隐私」入口必须 exact 匹配，说明文字「…隐私数据」会被子串误中。
+- **小布建议**：路径 设置 → OPPO AI（`com.oplus.pantanal.ums`）→ 小布建议；服务行是「已卸载/已开启」文字状态，不是本页开关，要拨开关需点进二级页。本机实测时设置首页搜索框未打开，此段走菜单路径。
+- **浏览器**：`com.heytap.browser` 预装但无桌面入口、`APP_SETTINGS` Intent 不解析、`BrowserPreferencesPage` 组件不存在（机主实际使用第三方浏览器），三段按「检测不到就跳过」。
+- **下拉搜索 / 负一屏**：本机装了第三方桌面（Microsoft Launcher），原厂搜索/负一屏不在使用面，未收录路径。
+- **通知渠道**：17 个营销渠道关闭并回读通过（通知页在 `com.oplus.notificationmanager`，与 #165 一致）；机主同意后 `com.opos.ads`、`com.heytap.pictorial`、`com.oppo.instant.local.service` 挂起成功。
+
 ## 一加 Ace 2（PHK110）
 实测日期：2026-10-25；系统：`PHK110_16.0.5.1201(CN01)`，Android 16。
 机型脚本：`recipes/oneplus-PHK110/recipe.py`，只运行与该版本匹配的五段：
