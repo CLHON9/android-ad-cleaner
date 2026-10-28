@@ -117,5 +117,65 @@ class OppoPkt110RecipeTests(unittest.TestCase):
             self.assertNotIn(forbidden, source)
 
 
+class OppoPkt110ParentChildTests(unittest.TestCase):
+    """全局搜索「首页卡片管理」里，父开关一关，子开关那两行就从页面上消失。"""
+
+    def make(self, state):
+        phone = Mock()
+        phone.scroll_more.return_value = False
+        phone.top.return_value = None
+        phone.switches.side_effect = lambda *a, **k: [(t, on, (10, 10)) for t, on in state.items()]
+
+        def off(only=None, page="", max_screens=40, **kw):
+            for name in list(state):
+                if only is not None and not any(k in name for k in only):
+                    continue
+                state[name] = False
+                if name == "应用建议":              # 父项一关，子项那两行就没了
+                    for child in ("未下载应用推荐", "应用建议小卡"):
+                        state.pop(child, None)
+        phone.off.side_effect = off
+        return phone, state
+
+    def load(self, phone):
+        path = ROOT / "recipes/oppo-PKT110/recipe.py"
+        scope = {"p": phone, "ONLY": ["__no_steps__"]}
+        with contextlib.redirect_stdout(io.StringIO()):
+            exec(compile(path.read_text(encoding="utf-8"), str(path), "exec"), scope)
+        return scope
+
+    def test_children_are_closed_before_the_parent(self):
+        phone, state = self.make({"应用建议": True, "未下载应用推荐": True,
+                                  "应用建议小卡": True, "热搜应用": True})
+        scope = self.load(phone)
+        scope["close_group"](["未下载应用推荐", "应用建议小卡"], "应用建议", "卡片", max_screens=1)
+        self.assertEqual(state.get("应用建议"), False)
+        self.assertEqual(state.get("热搜应用"), True)      # 别的开关不能被顺手动
+        self.assertEqual(scope["VERIFIED_SWITCHES"], 3)
+
+    def test_only_parent_is_closed_when_children_rows_are_already_gone(self):
+        phone, state = self.make({"应用建议": False, "热搜应用": True})
+        scope = self.load(phone)
+        scope["close_group"](["未下载应用推荐", "应用建议小卡"], "应用建议", "卡片", max_screens=1)
+        self.assertEqual(state.get("应用建议"), False)
+        self.assertEqual(scope["VERIFIED_SWITCHES"], 1)
+
+    def test_row_disappearing_with_parent_is_not_reported_as_state_change(self):
+        """子项那两行随父项一起消失，回读时不能再当成「别的开关状态变了」。"""
+        phone, state = self.make({"应用建议": True, "未下载应用推荐": True,
+                                  "应用建议小卡": True, "热搜应用": True})
+        scope = self.load(phone)
+        scope["close_named"](["应用建议"], "卡片", max_screens=1,
+                             gone=["未下载应用推荐", "应用建议小卡"])
+        self.assertEqual(scope["VERIFIED_SWITCHES"], 1)
+
+    def test_page_without_any_switch_is_reported(self):
+        phone, state = self.make({})
+        scope = self.load(phone)
+        scope["wait_switches"] = lambda *a, **k: False
+        with self.assertRaisesRegex(RuntimeError, "没读到开关"):
+            scope["close_named"](["个性化推荐"], "卡片", max_screens=1)
+
+
 if __name__ == "__main__":
     unittest.main()
