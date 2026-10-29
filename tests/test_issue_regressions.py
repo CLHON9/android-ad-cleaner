@@ -6,6 +6,7 @@ import json
 import ntpath
 import os
 from pathlib import Path
+import re
 import sys
 import tempfile
 import types
@@ -17,6 +18,7 @@ from PIL import Image
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tool"))
+import adb_link
 import chan_fast as chan
 import fast
 import run
@@ -42,6 +44,36 @@ def channel_phone():
 
 def snapshot(on=True, app_off=False):
     return {("com.example", "promo"): ("营销", 3 if on else 0, False)}, {"com.example": app_off}
+
+
+class ShellPipeTests(unittest.TestCase):
+    """#205：管道末端提前退出（grep -m / head -n）→ dumpsys 收到 SIGPIPE → adbutils 判
+    「shell output invalid」，chan-off 整段中断。末端必须把整条流读完。"""
+
+    # 管道末端只要提前退出就会触发 SIGPIPE：grep -m N、head（-N 或 -n N）、sed 'Nq'
+    EARLY_EXIT = re.compile(r"grep\s+-m\s*\d|\|\s*head\b|\|\s*sed\s+['\"]?\d+q")
+
+    def dumpsys_commands(self):
+        calls = []
+        p = fast.Phone.__new__(fast.Phone)
+        p.d = Mock()
+        p.d.shell.side_effect = lambda cmd, *a, **k: (calls.append(cmd), types.SimpleNamespace(output=""))[1]
+        p.focus()
+        chan.notifications_denied(p, "com.example")
+        return calls
+
+    def test_dumpsys_pipelines_read_to_the_end(self):
+        for cmd in self.dumpsys_commands() + [adb_link.KEYGUARD_CMD]:
+            with self.subTest(cmd=cmd):
+                self.assertNotRegex(cmd, self.EARLY_EXIT)
+
+    def test_focus_uses_first_match_when_the_whole_stream_is_read(self):
+        # sed 把整条流读完后截断到前几行，输出仍可能有多条匹配；取第一行才是原来的语义
+        p = fast.Phone.__new__(fast.Phone)
+        p.d = Mock()
+        p.d.shell.return_value = types.SimpleNamespace(output=(
+            "  mCurrentFocus=Window{1 u0 com.a/.A}\n  mCurrentFocus=Window{2 u0 com.b/.B}\n"))
+        self.assertEqual(p.focus(), "com.a/.A")
 
 
 class ScreenshotTests(unittest.TestCase):

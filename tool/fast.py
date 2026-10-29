@@ -155,14 +155,17 @@ class Phone:
 
     def focus(self):
         """当前焦点窗口（~0.1 秒；u2 的 app_current 在浮窗上会卡 10 秒）。"""
-        out = self.d.shell("dumpsys window | grep -m4 -E 'mCurrentFocus|mFocusedApp'").output
+        # 不能加 grep -m / head：提前退出会让 dumpsys 收到 SIGPIPE，u2 判「shell output invalid」（#205）。
+        # sed 读完整个流再截断，行数与原来一致。
+        out = self.d.shell("dumpsys window | grep -E 'mCurrentFocus|mFocusedApp' | sed -n '1,4p'").output
         # vivo OriginOS 3 / Android 13 行尾是「Activity}}」（错误日志 10-27）。
         # 焦点窗口为 null 时看 mFocusedApp：华为 HarmonyOS 4.2、vivo OriginOS Ocean 页面明明在，以前报「停在 未知页面」（错误日志 10-29）
         for field in ("mCurrentFocus", "mFocusedApp"):
             m = re.search(field + r"=.*? u0 ([^\s}]+)", out)
             if m:
                 return m.group(1)
-        out = self.d.shell("dumpsys activity activities | grep -m1 -E 'topResumedActivity|mResumedActivity|ResumedActivity:'").output
+        out = self.d.shell("dumpsys activity activities | grep -E 'topResumedActivity|mResumedActivity|ResumedActivity:'"
+                           " | sed -n '1p'").output
         m = re.search(r"u0 (\S+/[^\s}]+)", out) or re.search(r" (\S+/[^\s}]+)", out)
         return m.group(1) if m else ""
 
