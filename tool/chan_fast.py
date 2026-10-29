@@ -16,7 +16,8 @@ for _st in (sys.stdout, sys.stderr):
     except Exception:
         pass
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from fast import Phone, ScreenLocked, bounds, pause_point
+from fast import Phone, ScreenLocked, pause_point
+from row import PATH_DEPTH, bounds, own, path
 from channel_policy import protected_channel
 from troubleshooting import XIAOMI_INPUT
 import adb_link
@@ -87,7 +88,6 @@ SKIP = re.compile(r"下载|更新|安装|上传|订单|物流|快递|交易|支�
                   r"|上层显示"     # 「“钱包”正在其他应用的上层显示内容」是悬浮窗提示，名字带「内容」被误选（#115）
                   r"|提取|传输|已共享|正在进行", re.I)   # 识屏「内容提取」（系统锁定）、三星「内容已传输」等功能通知（错误日志 10-27）
 RETRY_MAX = 10
-LISTS = re.compile(r"ListView|RecyclerView|ScrollView", re.I)
 
 # ---------- 一项的结局 ----------
 # 每个出口返回一个 Outcome；怎么记账（算不算失败、要不要重试、算不算拨动了、复查是否豁免）
@@ -356,52 +356,11 @@ def channel_switch(p, name):
     return switches[0] if len(switches) == 1 else None
 
 
-def row_of(node, parents):
-    """文字所在的行：往上找可点 / 可勾选的控件。ListView 的行常常不可点（点击由列表处理），
-    到列表的直接子项为止；以前一直找到根节点为止，找不到就放弃（华为 HarmonyOS 4 应用通知页，错误日志 10-27）。"""
-    row = node
-    while row is not None:
-        if row.get("clickable") == "true" or row.get("checkable") == "true":
-            return row
-        parent = parents.get(row)
-        if parent is not None and (parent.get("scrollable") == "true" or LISTS.search(parent.get("class") or "")):
-            return row
-        row = parent
-    return None
-
-
-def boxes_in(p, node):
-    return [x for x in node.iter() if x is not node and x.get("checkable") == "true" and p.on_screen(x)
-            and "RadioButton" not in x.get("class", "")]
-
-
-def own_row(p, hit, parents):
-    """渠道名所在的行和行里的开关。row_of 找到的「行」里不止一个开关时（几个渠道排在同一张卡片里），
-    从渠道名往上找第一个含开关的控件，它只含一个开关才算这一行（华为 / 旧版荣耀，错误日志 10-28 九份）。"""
-    row = row_of(hit, parents)
-    if row is None:
-        return None, []
-    boxes = boxes_in(p, row) or ([row] if row.get("checkable") == "true" else [])
-    node = hit
-    while len(boxes) > 1 and node is not None and node is not row:
-        inner = boxes_in(p, node)
-        if inner:
-            return node, inner
-        node = parents.get(node)
-    return row, boxes
-
-
-def chain(node, parents, depth=8):
+def chain(node, parents, depth=PATH_DEPTH):
     """从渠道名往上的控件链：类名、可点 c / 可滚动 s、子树里的开关数。不含页面文字，适配新系统靠它。"""
-    out = []
-    while node is not None and len(out) < depth:
-        flags = ("c" if node.get("clickable") == "true" else "") + ("s" if node.get("scrollable") == "true" else "")
-        count = sum(x.get("checkable") == "true" for x in node.iter())
-        out.append(f"{(node.get('class') or 'node').rsplit('.', 1)[-1]}{':' + flags if flags else ''}#{count}")
-        if node.get("scrollable") == "true" or LISTS.search(node.get("class") or ""):
-            break
-        node = parents.get(node)
-    return "结构 " + " < ".join(out)
+    return "结构 " + " < ".join(
+        f"{(cls or 'node').rsplit('.', 1)[-1]}{':' + flags if flags else ''}#{count}"
+        for cls, flags, count in path(node, parents, depth))
 
 
 def inline_switch(p, name):
@@ -420,7 +379,7 @@ def inline_switch(p, name):
     for t, b, n in p.texts(root):
         if t != name or b[1] < p.H * 0.22 or n.get("checkable") == "true":
             continue
-        row, boxes = own_row(p, n, parents)
+        row, boxes = own(n, parents, p.on_screen)
         if row is None:
             missing = True
             reasons.append("没找到所在行；" + chain(n, parents))
@@ -496,7 +455,7 @@ def via_app_page(p, pk, name):
         for text, b, n in p.texts(root):
             if text != name or b[1] < p.H * 0.22 or n.get("checkable") == "true":
                 continue
-            row, boxes = own_row(p, n, parents)
+            row, boxes = own(n, parents, p.on_screen)
             if row is None:
                 continue
             if not vivo and boxes:

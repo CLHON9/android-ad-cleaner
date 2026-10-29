@@ -22,8 +22,8 @@ import uiautomator2 as u2
 from ui_session import connect
 from troubleshooting import UI_RECOVERY, XIAOMI_INPUT, accessibility_summary, input_blocked
 import adb_link
+from row import SWITCH_ROW_DEPTH, bounds, own, title_of
 
-BOUNDS = re.compile(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]")
 DISMISS = ("以后再说", "暂不更新", "暂不", "取消", "我知道了", "跳过", "禁止", "不再提示", "不同意")
 CONFIRM = ("确定", "关闭", "仍要关闭", "确认关闭", "确认", "继续关闭", "关闭推荐", "仍然关闭")
 PERMISSION_CONTROLLERS = {"com.android.permissioncontroller", "com.google.android.permissioncontroller"}
@@ -49,21 +49,11 @@ def pause_point():
     return True
 
 
-def bounds(n):
-    m = BOUNDS.match(n.get("bounds", ""))
-    return tuple(map(int, m.groups())) if m else (0, 0, 0, 0)
-
-
-def switch_row(node, parents, depth=6):
-    """文字所在的那一行（往上第一个可点 / 可勾选的控件）里有开关：这一行是开关，不是导航入口。"""
-    row = node
-    for _ in range(depth):
-        if row is None:
-            return False
-        if row.get("clickable") == "true" or row.get("checkable") == "true":
-            return any(x.get("checkable") == "true" and "RadioButton" not in (x.get("class") or "") for x in row.iter())
-        row = parents.get(row)
-    return False
+def switch_row(node, parents, depth=SWITCH_ROW_DEPTH):
+    """文字所在的那一行里有开关：这一行是开关，不是导航入口。
+    只看结构：调用方 find() 已经自己筛过可视区域，这里不重复筛。"""
+    _, boxes = own(node, parents, lambda _: True, depth)
+    return any("RadioButton" not in (n.get("class") or "") for n in boxes)
 
 
 # 「防止/限制/阻止广告跟踪」「关闭个性化推荐」这类开关是反着的：打开才是保护。不能当广告开关关掉。
@@ -240,45 +230,8 @@ class Phone:
             if r - l <= 0 or b - t <= 0 or not self.on_screen(n):
                 continue
             cy = (t + b) // 2
-            states = ("开", "关", "已开启", "已关闭", "开启", "关闭", "ON", "OFF",
-                      "开启，开关", "关闭，开关", "已开启，开关", "已关闭，开关", "开启，按钮", "关闭，按钮")
-            label = (n.get("text") or n.get("content-desc") or "").strip().split("\n", 1)[0]
-            label = label if label not in states else ""
-            title, p = "", n
-            for _ in range(6):
-                # 有自己的可访问标签时，不从包含多个开关的公共列表借用相邻行标题。
-                # 单行容器仍优先取子标题，避免把「标题 + 长说明」整段当标题。
-                if label and p is not n and sum(
-                    1 for x in p.iter("node") if "Switch" in x.get("class", "")
-                    and "Switcher" not in x.get("class", "") and self.on_screen(x)
-                ) > 1:
-                    title = label
-                    break
-                cand = []
-                for x in p.iter("node"):
-                    tx = (x.get("text") or x.get("content-desc") or "").strip().split("\n", 1)[0]
-                    if x is n or not tx or tx in states:
-                        continue
-                    xl, xt, xr, xb = bounds(x)
-                    if xb <= xt or not self.on_screen(x):
-                        continue
-                    cand.append((xt, xl, xb, tx))
-                if cand:
-                    pl, pt, pr, pb = bounds(p)
-                    if pb - pt <= max(self.H * 0.18, (b - t) * 3):
-                        title = min(cand)[3]          # 开关所在的这一行：最上面那段是标题，下面是说明
-                    else:
-                        # 往上找到的是整个列表：取竖直方向离开关最近的文字（Issue #2：不然会把
-                        # 「自动更新」那行认成上一行的「每次联网时通知」）
-                        near = sorted((0 if xt <= cy <= xb else min(abs(xt - cy), abs(xb - cy)), xt, tx)
-                                      for xt, xl, xb, tx in cand)
-                        if near[0][0] <= max(60, b - t):
-                            title = near[0][2]
-                    break
-                p = parent.get(p)
-                if p is None:
-                    break
-            out.append((title or label, n.get("checked") == "true", ((l + r) // 2, cy)))
+            out.append((title_of(n, parent, self.on_screen, self.H),
+                        n.get("checked") == "true", ((l + r) // 2, cy)))
         # 同一行有「整行」和「开关」两个 checkable 时，留最靠右的那个
         rows = []
         for sw in sorted(out, key=lambda s: s[2][1]):
