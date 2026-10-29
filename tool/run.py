@@ -235,6 +235,20 @@ def installed(serial, pkg):
     return "package:" in sh(serial, f"pm path {pkg}")
 
 
+def pkg_list(serial, args=""):
+    """包列表。部分 ROM 上 `pm list packages` 无论带什么参数都无输出且 exit 0
+    （HyperOS 4，Issue #192），这时换 `cmd package list packages`，参数一样。
+    两条通路都没读到包名时返回读到的报错原文，快照里留着排障；带过滤参数的清单本来就可能为空。"""
+    suffix = f" {args}" if args else ""
+    diagnostic = ""
+    for command in (f"pm list packages{suffix}", f"cmd package list packages{suffix}"):
+        out = sh(serial, command)
+        if re.search(r"(?m)^package:", out):
+            return out
+        diagnostic = diagnostic or out
+    return diagnostic
+
+
 VIVO_QUICKAPP = "switch_quick_app_service"
 
 
@@ -286,7 +300,7 @@ def set_quickapp_service(serial, restore=False):
 def quickapps(serial):
     """装着的快应用组件，带状态。"""
     ev = sh(serial, "dumpsys usagestats")
-    disabled = set(re.findall(r"^package:(\S+)", sh(serial, "pm list packages --user 0 -d"), re.M))
+    disabled = set(re.findall(r"(?m)^package:(\S+)", pkg_list(serial, "--user 0 -d")))
     out = []
     for pkg, name, brand, tested in QUICKAPP:
         if not installed(serial, pkg):
@@ -396,11 +410,17 @@ def main():
         print(f"插电常亮：{sh(s, 'settings get global stay_on_while_plugged_in')}")
 
     elif cmd == "backup":
+        # 先探活再建目录：读不到包列表时不留半成品快照（后续步骤会把最新目录当成改动前的快照）。
+        # 带过滤参数的清单可以合法为空，只有不带参数的完整清单不可能为空。
+        probe = pkg_list(s)
+        if not re.search(r"(?m)^package:", probe):
+            detail = f"；手机返回：{probe[-180:]}" if probe else ""
+            sys.exit(f"✗ 读不到包列表（pm list 与 cmd package list 都没有包名），未生成快照{detail}")
         d = latest_backup(s, create=True)
         Path(d, "info.txt").write_text("\n".join(f"{k}={v}" for k, v in info(s).items()), encoding="utf-8")
-        for name, c in [("sys.txt", "pm list packages --user 0 -s"), ("user.txt", "pm list packages --user 0 -3"),
-                        ("disabled.txt", "pm list packages --user 0 -d"), ("notif.txt", "dumpsys notification --noredact")]:
-            Path(d, name).write_text(sh(s, c), encoding="utf-8")
+        for name, args in (("sys.txt", "--user 0 -s"), ("user.txt", "--user 0 -3"), ("disabled.txt", "--user 0 -d")):
+            Path(d, name).write_text(pkg_list(s, args), encoding="utf-8")
+        Path(d, "notif.txt").write_text(sh(s, "dumpsys notification --noredact"), encoding="utf-8")
         st = "\n".join(f"## {n}\n" + sh(s, f"settings list {n}") for n in ("system", "secure", "global"))
         Path(d, "settings-before.txt").write_text(st, encoding="utf-8")
         Path(d, "stay_on.txt").write_text(sh(s, "settings get global stay_on_while_plugged_in"), encoding="utf-8")
