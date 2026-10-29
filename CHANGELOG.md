@@ -4,6 +4,7 @@
 
 | 现象 | 来源 | 处理 |
 |---|---|---|
+| 纵横小说同一渠道在清单里出现两行，差别只是渠道 ID 和名称末尾的空格；带空格那行「未确认」，收尾误报「营销渠道仍开着 1 个」 | [#194](https://github.com/rddmwmddr/android-ad-cleaner/issues/194) | 读系统回读时渠道 ID、渠道名都去掉两头空格，按（包名、渠道 ID）合并成一条；已删除的重复记录不覆盖有效记录。读清单时同样去空格并按渠道去重，旧清单也能用，收尾按渠道计数 |
 | 「关闭营销通知」在 HyperOS 3 / Android 16 跑到第 19 条左右整段中断，报 `AdbError: shell output invalid` | [#205](https://github.com/rddmwmddr/android-ad-cleaner/issues/205) | 读锁屏、焦点窗口、通知权限的 `dumpsys` 管道末尾原来用 `grep -m4` / `grep -m1` / `head -12`，读够就退出，`dumpsys` 收到 SIGPIPE 后往输出里写 Broken pipe，adbutils 找不到结束标记便抛异常。现在改成 `grep` 过滤后由 `sed -n` 截断，它会读完整个输入再输出，行数和取首行的语义都不变。REDMI K80 / HyperOS 3 报告者实测去掉 `-m1` 后 71 条渠道全部关闭 |
 
 ## 0.2.7 · 2026-10-29

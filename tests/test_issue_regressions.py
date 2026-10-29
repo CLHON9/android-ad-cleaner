@@ -105,6 +105,87 @@ class ChannelTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "第 1 行"):
                 chan.load(path)
 
+    def test_channel_list_with_trailing_spaces_is_normalized(self, _sleep):
+        # #194 纵横读屏：清单里同一渠道带尾空格出现两次，后一行被报「未确认」，收尾误报仍开着 1 个
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory, "channels.tsv")
+            path.write_text("com.example\tpromo \ncom.example\tpromo\t营销 \n", encoding="utf-8")
+            self.assertEqual(chan.load(path), [("com.example", "promo", "营销")])
+
+    def test_dump_ids_with_trailing_spaces_are_one_channel(self, _sleep):
+        # 系统回读里同一渠道可能带尾随空格；内部键必须一致，否则 load 后的 ID 查不到状态
+        p = channel_phone()
+        p.d.shell.return_value.output = """PackagePreferences:
+      AppSettings: com.zongheng.reader importance=DEFAULT
+        NotificationChannel{mId='flhd', mName=福利活动, mDescription=null, mImportance=0, mDeleted=false}
+        NotificationChannel{mId='flhd ', mName=福利活动 , mDescription=null, mImportance=3, mDeleted=false}
+    """
+        d, _ = chan.parse(p)
+        self.assertEqual(list(d), [("com.zongheng.reader", "flhd")])
+        self.assertEqual(d[("com.zongheng.reader", "flhd")][:2], ("福利活动", 3))
+
+    def test_deleted_duplicate_does_not_override_live_channel(self, _sleep):
+        p = channel_phone()
+        p.d.shell.return_value.output = """PackagePreferences:
+      AppSettings: com.example importance=DEFAULT
+        NotificationChannel{mId='promo', mName=活动优惠, mDescription=null, mImportance=0, mDeleted=false}
+        NotificationChannel{mId='promo ', mName=活动优惠 , mDescription=null, mImportance=3, mDeleted=true}
+    """
+        d, _ = chan.parse(p)
+        self.assertEqual(d[("com.example", "promo")], ("活动优惠", 0, False))
+
+    def test_unspecified_importance_keeps_channel_on(self, _sleep):
+        # 0 才是已屏蔽；-1000（未指定）名义上仍开着，合并时不能被已关的那条盖掉
+        p = channel_phone()
+        p.d.shell.return_value.output = """PackagePreferences:
+      AppSettings: com.example importance=DEFAULT
+        NotificationChannel{mId='promo', mName=营销, mDescription=null, mImportance=0, mDeleted=false}
+        NotificationChannel{mId='promo ', mName=营销 , mDescription=null, mImportance=-1000, mDeleted=false}
+    """
+        d, _ = chan.parse(p)
+        self.assertEqual(d[("com.example", "promo")][1], -1000)
+        self.assertEqual(chan.state(d, {}, "com.example", "promo"), "ON")
+
+    def test_deleted_duplicate_does_not_mark_channel_locked(self, _sleep):
+        p = channel_phone()
+        p.d.shell.return_value.output = """PackagePreferences:
+      AppSettings: com.example (10001) importance=DEFAULT fixedImportance=true
+        NotificationChannel{mId='promo', mName=活动优惠, mDescription=null, mImportance=3, mDeleted=false}
+        NotificationChannel{mId='promo ', mName=活动优惠 , mDescription=null, mImportance=3, mDeleted=true, mBlockableSystem=false}
+    """
+        locked = set()
+        chan.parse(p, locked)
+        self.assertEqual(locked, set())
+
+    def test_repeated_rows_do_not_count_as_still_on(self, _sleep):
+        result = types.SimpleNamespace(returncode=0, stderr="", stdout="""PackagePreferences:
+      AppSettings: com.example importance=DEFAULT
+        NotificationChannel{mId='promo', mName=营销, mDescription=null, mImportance=3, mDeleted=false}
+    """)
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory, "channels.tsv")
+            path.write_text("com.example\tpromo \t营销 \ncom.example\tpromo\t营销\n", encoding="utf-8")
+            with patch.object(chan.subprocess, "run", return_value=result), \
+                 patch.object(sys, "argv", ["chan_fast.py", "-s", "test", "verify", str(path)]), \
+                 contextlib.redirect_stdout(io.StringIO()) as out:
+                chan.main()
+        # 渠道仍开着：按渠道计 1 个，重复行不能算成 2 个
+        self.assertIn("营销渠道仍开着: 1 个", out.getvalue())
+        self.assertNotIn("营销渠道仍开着: 2 个", out.getvalue())
+
+    def test_scan_lists_repeated_channel_once(self, _sleep):
+        result = types.SimpleNamespace(returncode=0, stderr="", stdout="""PackagePreferences:
+      AppSettings: com.zongheng.reader importance=DEFAULT
+        NotificationChannel{mId='flhd', mName=福利活动, mDescription=null, mImportance=3, mDeleted=false}
+        NotificationChannel{mId='flhd ', mName=福利活动 , mDescription=null, mImportance=3, mDeleted=false}
+    """)
+        with patch.object(chan.subprocess, "run", return_value=result), \
+             patch.object(chan, "app_labels", return_value={}), \
+             patch.object(sys, "argv", ["chan_fast.py", "-s", "test", "scan"]), \
+             contextlib.redirect_stdout(io.StringIO()) as out:
+            chan.main()
+        self.assertEqual(out.getvalue(), "com.zongheng.reader\tflhd\t福利活动\n")
+
     def test_notification_dump_failure_is_not_empty_success(self, _sleep):
         p = channel_phone()
         p.d.shell.return_value.output = "Permission denied"
