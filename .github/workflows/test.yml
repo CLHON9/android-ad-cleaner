@@ -16,5 +16,17 @@ jobs:
           python-version: "3.12"
       - name: 安装依赖
         run: pip install -r requirements.txt
+      - name: 准备 adb（run.py 在 import 时就要求找得到 adb，测试本身不用手机）
+        run: |
+          adb="$(command -v adb || true)"
+          sdk="${ANDROID_HOME:-/usr/local/lib/android/sdk}/platform-tools/adb"
+          if [ -z "$adb" ] && [ -x "$sdk" ]; then adb="$sdk"; fi
+          if [ -z "$adb" ]; then
+            sudo apt-get update -qq
+            sudo apt-get install -y adb
+            adb="$(command -v adb)"
+          fi
+          echo "ADB=$adb" >> "$GITHUB_ENV"
+          "$adb" version
       - name: 设备无关回归测试
         run: python -m unittest discover -s tests -v
