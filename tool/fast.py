@@ -121,7 +121,7 @@ class Phone:
     def _resilient_shell(self, *args, **kwargs):
         """手机短暂掉线（另一个 adb 服务重启、接口抖动）等它回来重试一次；仍不在就整段停下。"""
         if self.lost:
-            raise adb_link.lost()
+            raise adb_link.DeviceLost(adb_link.REPEAT)
         try:
             return self._shell(*args, **kwargs)
         except Exception as e:
@@ -132,6 +132,23 @@ class Phone:
                 self.lost = True
                 raise adb_link.lost(str(e)) from e
             return self._shell(*args, **kwargs)
+
+    def check_alive(self):
+        """本轮已确认断线：本段立刻停下，不再读屏、不再逐段重试（#293）。
+        排查说明由第一次报错给出，后面的段只报这一句。"""
+        if getattr(self, "lost", False):
+            raise adb_link.DeviceLost(adb_link.REPEAT)
+
+    def _u2(self, fn, *a, **k):
+        """u2 直连的调用（dump_hierarchy、window_size、app_stop）不走 shell；
+        连接级异常也在这里记下断线，否则后面的段会一遍遍重复同样的失败（#293）。"""
+        self.check_alive()
+        try:
+            return fn(*a, **k)
+        except Exception as e:
+            if adb_link.lib_gone(str(e)):
+                self.lost = True
+            raise
 
     def close(self):
         self.d.close()
@@ -148,13 +165,14 @@ class Phone:
 
     # ---------- 读屏 ----------
     def tree(self):
-        root = ET.fromstring(self.d.dump_hierarchy())
+        root = ET.fromstring(self._u2(self.d.dump_hierarchy))
         # Mi 10 的热榜子页会横屏；不能一直用连接时的竖屏尺寸过滤节点。
-        self.W, self.H = self.d.window_size()
+        self.W, self.H = self._u2(self.d.window_size)
         return root
 
     def focus(self):
         """当前焦点窗口（~0.1 秒；u2 的 app_current 在浮窗上会卡 10 秒）。"""
+        self.check_alive()
         # 不能加 grep -m / head：提前退出会让 dumpsys 收到 SIGPIPE，u2 判「shell output invalid」（#205）。
         # sed 读完整个流再截断，行数与原来一致。
         out = self.d.shell("dumpsys window | grep -E 'mCurrentFocus|mFocusedApp' | sed -n '1,4p'").output
@@ -334,7 +352,7 @@ class Phone:
 
     # ---------- 动作 ----------
     def click(self, x, y):
-        size = self.d.window_size()
+        size = self._u2(self.d.window_size)
         if tuple(size) != (self.W, self.H):
             self.W, self.H = size
             raise RuntimeError("屏幕方向或尺寸已变化，停止使用旧坐标；请重新读取页面")
@@ -741,15 +759,23 @@ class Phone:
 
     def start(self, pkg, activity=None, settle=1.2, foreground=None):
         """拉起 App；之后 settle 秒内冒出来的更新/推荐弹窗顺手点掉。"""
+        self.check_alive()
         self.miss = 0
         if activity:
             result = self.d.shell(f"am start -f 0x10008000 -n {pkg}/{activity}")
         else:
-            self.d.app_stop(pkg)
+            self._u2(self.d.app_stop, pkg)
             result = self.d.shell(f"monkey -p {pkg} -c android.intent.category.LAUNCHER 1")
         if result.exit_code or re.search(r"Error|Exception|No activities found|monkey aborted", result.output, re.I):
             # 同品牌参考脚本里的 App 本机可能没装或换了包名（#87 #165），说清楚，别报成打开失败。
-            if "package:" not in self.d.shell(f"pm path {pkg}").output:
+            pm = self.d.shell(f"pm path {pkg}").output
+            if "package:" not in pm:
+                # adb 断开时 pm path 也一样没有输出：先确认手机还在不在，
+                # 别把断连报成「本机没有安装」，后面的段也据此快速跳过（#293）。
+                if adb_link.client_gone(result.output + pm) or adb_link.lib_gone(result.output + pm) \
+                        or adb_link.detached(self.serial):
+                    self.lost = True
+                    raise adb_link.lost((result.output or pm).strip())
                 raise RuntimeError(f"本机没有安装 {pkg}，跳过本段")
             raise RuntimeError(f"无法打开 {pkg}：{result.output.strip()[-250:]}")
         deadline = time.monotonic() + 5
