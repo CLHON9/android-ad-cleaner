@@ -222,7 +222,7 @@ class ChannelTests(unittest.TestCase):
         p = channel_phone()
         p.focus.return_value = "com.example/.MarketingSettings"
         with patch.object(chan, "parse", return_value=snapshot()), patch.object(chan, "via_app_page", return_value=None):
-            self.assertIn("未确认", chan.toggle(p, "com.example", "promo", False, "营销"))
+            self.assertEqual(chan.toggle(p, "com.example", "promo", False, "营销").kind, chan.NOT_CONFIRMED)
         p.click.assert_not_called()
 
     def test_no_fallback_to_first_switch(self, _sleep):
@@ -243,7 +243,7 @@ class ChannelTests(unittest.TestCase):
           <node class="android.widget.Switch" checked="false" checkable="true" bounds="[900,520][1040,590]"/></node>''')
         root[0].append(extra)
         with patch.object(chan, "parse", return_value=snapshot()), patch.object(chan, "via_app_page", return_value=None):
-            self.assertIn("未确认", chan.toggle(p, "com.example", "promo", False, "营销"))
+            self.assertEqual(chan.toggle(p, "com.example", "promo", False, "营销").kind, chan.NOT_CONFIRMED)
         p.click.assert_not_called()
 
     def test_vivo_channel_page_needs_app_title_from_app_page(self, _sleep):
@@ -267,14 +267,14 @@ class ChannelTests(unittest.TestCase):
     def test_last_click_is_verified_not_reported_as_failure(self, _sleep):
         p = channel_phone()
         with patch.object(chan, "parse", side_effect=[snapshot(), snapshot(), snapshot(), snapshot(False)]):
-            self.assertIsNone(chan.toggle(p, "com.example", "promo", False, "营销"))
+            self.assertEqual(chan.toggle(p, "com.example", "promo", False, "营销").kind, chan.DONE)
         self.assertEqual(p.click.call_count, 3)
 
     def test_changed_page_does_not_reuse_coordinates(self, _sleep):
         p = channel_phone()
         p.click.side_effect = lambda *xy: p.tree.__setattr__("return_value", ET.fromstring("<hierarchy/>"))
         with patch.object(chan, "parse", return_value=snapshot()):
-            self.assertIn("已变化", chan.toggle(p, "com.example", "promo", False, "营销"))
+            self.assertIn("已变化", chan.toggle(p, "com.example", "promo", False, "营销").detail)
         self.assertEqual(p.click.call_count, 1)
 
     def test_app_notification_change_aborts_batch(self, _sleep):
@@ -290,7 +290,7 @@ class ChannelTests(unittest.TestCase):
             if node.get("checkable") == "true":
                 node.set("checked", "false")
         with patch.object(chan, "parse", return_value=snapshot()):
-            self.assertIn("不一致", chan.toggle(p, "com.example", "promo", False, "营销"))
+            self.assertIn("不一致", chan.toggle(p, "com.example", "promo", False, "营销").detail)
         p.click.assert_not_called()
 
     def test_app_page_fallback_navigates_then_checks_channel(self, _sleep):
@@ -315,7 +315,7 @@ class ChannelTests(unittest.TestCase):
         with patch.object(chan, "Phone", return_value=channel_phone()), patch.object(chan, "keep_awake", return_value=None), \
              patch.object(chan, "load", return_value=[("com.example", "promo", "营销")]), \
              patch.object(chan, "parse", return_value=snapshot(False)), \
-             patch.object(chan, "toggle", return_value="未确认渠道页"), \
+             patch.object(chan, "toggle", return_value=chan.Outcome(chan.NOT_CONFIRMED, "未确认渠道页")), \
              patch.object(sys, "argv", ["chan_fast.py", "-s", "test", "on", "channels.tsv"]), \
              contextlib.redirect_stdout(io.StringIO()):
             with self.assertRaises(SystemExit) as raised:

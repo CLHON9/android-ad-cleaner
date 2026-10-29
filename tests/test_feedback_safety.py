@@ -89,7 +89,7 @@ class PhotoSpotTests(unittest.TestCase):
         p = Mock(); p.locked.return_value = False
         with patch.object(chan, "parse", return_value=self.state()):
             result = chan.toggle(p, "com.example", "recommend", False, "活动优惠")
-        self.assertIn("受保护", result)
+        self.assertEqual(result.kind, chan.PROTECTED)
         p.d.shell.assert_not_called()
         p.click.assert_not_called()
 
@@ -98,7 +98,7 @@ class PhotoSpotTests(unittest.TestCase):
             path = Path(directory, "restore.tsv")
             path.write_text("com.example\trecommend\t找机位通知\n", encoding="utf-8")
             with patch.object(chan, "parse", side_effect=[self.state(on=False), self.state()]), \
-                 patch.object(chan, "Phone") as phone, patch.object(chan, "toggle", return_value=None) as toggle, \
+                 patch.object(chan, "Phone") as phone, patch.object(chan, "toggle", return_value=chan.Outcome(chan.DONE)) as toggle, \
                  patch.object(chan, "keep_awake", return_value=None), \
                  patch.object(sys, "argv", ["chan_fast.py", "-s", "test", "on", str(path)]), \
                  contextlib.redirect_stdout(io.StringIO()) as output:
@@ -113,7 +113,7 @@ class PhotoSpotTests(unittest.TestCase):
              patch.object(chan, "wait_page", return_value=("允许通知", False, (500, 500))), \
              patch.object(chan, "disabled_at", return_value=False), \
              patch.object(chan.time, "sleep"):
-            self.assertIsNone(chan.toggle(p, "com.example", "recommend", True, "找机位推荐"))
+            self.assertEqual(chan.toggle(p, "com.example", "recommend", True, "找机位推荐").kind, chan.DONE)
         p.click.assert_called_once_with(500, 500)
 
 

@@ -154,13 +154,14 @@ class SideEffectTests(unittest.TestCase):
         p = self.phone()
         allowed = {("com.example", "promo"), ("com.example", "order")}
         with patch.object(chan, "parse", side_effect=[snap(), snap(target_on=False, other_on=False)]):
-            self.assertIsNone(chan.toggle(p, "com.example", "promo", False, "营销通知", allowed))
+            self.assertEqual(chan.toggle(p, "com.example", "promo", False, "营销通知", allowed).kind, chan.DONE)
 
     def test_unconfirmed_page_reports_where_it_stopped(self, _sleep):
         p = self.phone()
         p.focus.return_value = "com.vendor.notify/.UnknownPage"
         with patch.object(chan, "parse", return_value=snap()), patch.object(chan, "via_app_page", return_value=None):
-            self.assertIn("停在 com.vendor.notify/.UnknownPage", chan.toggle(p, "com.example", "promo", False, "营销通知"))
+            self.assertIn("停在 com.vendor.notify/.UnknownPage",
+                          chan.toggle(p, "com.example", "promo", False, "营销通知").detail)
 
     def test_batch_stops_after_stopbatch(self, _sleep):
         items = [("com.example", "promo", "营销通知"), ("com.example", "news", "资讯")]
@@ -232,7 +233,7 @@ class LockedChannelTests(unittest.TestCase):
         p = page(CHANNEL_PAGE.replace('checked="true"', 'checked="true" enabled="false"'),
                  "com.android.settings/.Settings$ChannelNotificationSettingsActivity")
         with patch.object(chan, "parse", return_value=snap()), patch.object(chan.time, "sleep"):
-            self.assertIn("系统锁定", chan.toggle(p, "com.example", "promo", False, "营销通知"))
+            self.assertEqual(chan.toggle(p, "com.example", "promo", False, "营销通知").kind, chan.GREYED)
         p.click.assert_not_called()
 
 
@@ -286,7 +287,7 @@ class ScanWordingTests(unittest.TestCase):
         data = {("com.example", "promo"): ("营销推广", 3, False)}
         with patch.object(chan, "load", return_value=items), patch.object(chan, "parse", return_value=(data, {})), \
              patch.object(chan, "Phone"), patch.object(chan, "keep_awake", return_value=None), \
-             patch.object(chan, "toggle", return_value="点击后渠道状态未改变"), \
+             patch.object(chan, "toggle", return_value=chan.Outcome(chan.UNCHANGED, "点击后渠道状态未改变")), \
              patch.object(sys, "argv", ["chan_fast.py", "-s", "test", "off", "x.tsv"]), \
              contextlib.redirect_stdout(io.StringIO()) as out:
             with self.assertRaises(SystemExit):

@@ -109,7 +109,7 @@ class HuaweiCardTests(unittest.TestCase):
         p = phone([FLAT_CARD], APP_FOCUS)
         with patch.object(chan, "parse", return_value=({("com.x", "promo"): ("营销通知", 3, False)}, {})), \
              patch.object(chan.time, "sleep"):
-            message = chan.toggle(p, "com.x", "promo", False, "营销通知")
+            message = chan.toggle(p, "com.x", "promo", False, "营销通知").detail
         self.assertIn("这一行的开关没认出", message)
         self.assertIn("行内开关 2 个", message)
 
@@ -201,14 +201,15 @@ def run_off(toggle, reads):
     return code, printed.getvalue(), toggled
 
 
-SKIPPED = "未确认「资讯推送」渠道页及通知开关，跳过（停在 x；点这一行后页面没变）"
+OK = chan.Outcome(chan.DONE)
+SKIPPED = chan.Outcome(chan.NOT_CONFIRMED, "未确认「资讯推送」渠道页及通知开关，跳过（停在 x；点这一行后页面没变）")
 
 
 class RetryTests(unittest.TestCase):
     def test_unconfirmed_channel_is_retried_once_at_the_end(self):
         # OPPO Find X9 关了 67 个剩 1 个、红米 Note 12 Turbo 93 个剩 1 个，整步算失败
         after = dict(off(ON))
-        code, printed, toggled = run_off([None, SKIPPED, None, None], [ON, {**after, ("com.b", "news"): ON[("com.b", "news")]}, after])
+        code, printed, toggled = run_off([OK, SKIPPED, OK, OK], [ON, {**after, ("com.b", "news"): ON[("com.b", "news")]}, after])
         self.assertEqual(code, 0)
         self.assertEqual([c.args[2] for c in toggled.call_args_list], ["promo", "news", "deal", "news"])
         self.assertIn("再试一次刚才没确认的 1 个渠道", printed)
@@ -216,7 +217,7 @@ class RetryTests(unittest.TestCase):
 
     def test_retry_that_fails_again_still_fails_the_step(self):
         still = {**off(ON), ("com.b", "news"): ON[("com.b", "news")]}
-        code, printed, toggled = run_off([None, SKIPPED, None, SKIPPED], [ON, still, still])
+        code, printed, toggled = run_off([OK, SKIPPED, OK, SKIPPED], [ON, still, still])
         self.assertEqual(code, 1)
         self.assertIn("仍开着：资讯推送", printed)
 
@@ -228,12 +229,12 @@ class RetryTests(unittest.TestCase):
         self.assertNotIn("再试一次", printed)
 
     def test_already_changed_channel_is_not_touched_again(self):
-        code, printed, toggled = run_off([None, SKIPPED, None], [ON, off(ON), off(ON)])
+        code, printed, toggled = run_off([OK, SKIPPED, OK], [ON, off(ON), off(ON)])
         self.assertEqual(code, 0)
         self.assertEqual(toggled.call_count, 3)
 
     def test_progress_line_after_connecting(self):
-        code, printed, _ = run_off([None, None, None], [ON, off(ON)])
+        code, printed, _ = run_off([OK, OK, OK], [ON, off(ON)])
         self.assertIn("要处理 3 个渠道", printed)
 
 
@@ -421,7 +422,7 @@ class PauseTests(unittest.TestCase):
         phone = Mock(wait_unlocked=Mock(return_value=True), lost=False)
         with patch.object(chan, "load", return_value=ITEMS), patch.object(chan, "parse", side_effect=[(ON, {}), (off(ON), {})]), \
              patch.object(chan, "Phone", return_value=phone), patch.object(chan, "keep_awake", return_value=None), \
-             patch.object(chan, "toggle", return_value=None), patch.object(chan, "pause_point") as paused, \
+             patch.object(chan, "toggle", return_value=OK), patch.object(chan, "pause_point") as paused, \
              patch.object(sys, "argv", ["chan_fast.py", "-s", "test", "off", "x.tsv"]), contextlib.redirect_stdout(io.StringIO()):
             chan.main()
         self.assertEqual(paused.call_count, 3)
