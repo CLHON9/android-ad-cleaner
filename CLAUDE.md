@@ -10,6 +10,7 @@
 - CI：`.github/workflows/test.yml` 在 PR 和 main 推送时自动跑同一套；`build-windows.yml` 只在 `v*` 标签或手动触发时打包，不守 PR。
 - 静态检查：同一份 CI 里跑 `ruff check --select F,E9 tool tests gui`。不查 `recipes/`——机型脚本靠注入作用域执行，静态分析看到的全是未定义名；也不开格式与行长规则。
 - 审查标准：见 [CODING_STANDARDS.md](CODING_STANDARDS.md)，只放判断项；机械规则交给 CI。
+- 社区问题的归类与真机缺口见 [docs/09](docs/09-社区问题处理.md)：那里只记 GitHub 上看不到的判据与缺口，逐条回复与 issue 编号留在 issue 里。
 - 找「开关所属的行」先看 [tool/row.py](tool/row.py)：`line` 结构定界、`own` 多开关容器收窄、`title_of` 平铺列表按竖直距离分带；`fast.py` 与 `chan_fast.py` 消费它，不要另写一份。
 - 找「等页面认得出」先看 [tool/wait.py](tool/wait.py)：`settle` / `setting` / `wait_page` / `off` 都消费 `until()`，不要另写轮询循环。
 - 纯重构要给对拍证据时用 [tests/fixtures.py](tests/fixtures.py)：`all_pages()` 取 `tests/` 里的页面样本，`Clock` 是假时钟，`Timeline` + `Device` 按时间轴换页，`fake_phone()` 造不连手机的 `Phone`。
