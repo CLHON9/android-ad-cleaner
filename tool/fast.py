@@ -494,12 +494,20 @@ class Phone:
 
     def confirm(self):
         """开关后弹确认框就点确认类按钮。只认真按钮（Button 类），
-        ColorOS 开关旁边的「开启/关闭」状态文字不算——点了会把开关又拨回去。"""
+        ColorOS 开关旁边的「开启/关闭」状态文字不算——点了会把开关又拨回去。
+
+        按钮文字不一定在 text 上：vivo 阅图锁屏的确认框是 android.widget.Button，
+        text 为空、文字写在 content-desc（Issue #246）。只在 text 为空时回退到
+        content-desc，并且仍然要求 Button 类、整段等于确认词，避免点到说明文字。
+        """
         time.sleep(0.2)
         root = self.tree()
         for c in CONFIRM:
             for n in root.iter("node"):
-                if (n.get("text") or "").strip() == c and "Button" in (n.get("class") or ""):
+                label = (n.get("text") or "").strip()
+                if not label:
+                    label = (n.get("content-desc") or "").strip()
+                if label == c and "Button" in (n.get("class") or ""):
                     l, t, r, b = bounds(n)
                     if r > l and b > t:
                         self.click((l + r) // 2, (t + b) // 2)
