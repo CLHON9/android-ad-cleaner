@@ -188,10 +188,20 @@ adb -s S shell cmd connectivity set-package-networking-enabled true com.miui.sys
 
 | 现象 | 对策 |
 |---|---|
-| 脚本能读屏、点不动 | 开发者选项里打开「USB 调试（安全设置）」 |
+| 脚本能读屏、点不动 | 先看日志有没有 `INJECT_EVENTS`：有就是开发者选项里的「USB 调试（安全设置）」没真正生效，不是页面改版；报错原文与实测见下方 |
 | 关开关弹「确认关闭」 | 点确定 |
 | 浏览器吞掉点击 | 用 80 毫秒短按，引擎已处理 |
 | 带背屏的机型截图报多屏 | `screencap` 加 `-d <主屏 display id>` |
+
+**「能读屏、点不动」≠ 页面改版：先看有没有 `INJECT_EVENTS`。** 没真正打开「USB 调试（安全设置）」时，`fast.py ls`、`run.py check` 都正常，设置首页的文字也读得到，但 `input tap / swipe` 和 uiautomator2 的 `swipe()` 会被系统拒绝：
+
+```
+java.lang.SecurityException: Injecting input events requires the caller (or the source of the instrumentation, if any) to have the INJECT_EVENTS permission.
+```
+
+这时机型脚本每一段都会「没找到」，症状和入口改名、页面改版一模一样。Xiaomi 18 Pro Max（M154FF，OS4.0 / Android 17，2026-10-29，[Issue #191](https://github.com/rddmwmddr/android-ad-cleaner/issues/191)）实测：未开该开关时九段全「没找到」、147 秒、关 0 个；打开后同一份脚本、同一台机器一次跑通，首次关掉 18 个开关，紧接的复跑轮核对 22 项、全部「调整 0 项」。没有改代码，也没有改其他设置。
+
+0.2.4 起两处都先探一次：检测页发一个不触发任何操作的空按键（`input keyevent 0`），被拒就提示打开这一项、不进入下一步；读屏起来之后 `Phone.start()` 再探一次，抛 `INPUT_BLOCKED`，不必等九段各跑一遍才发现。打开时手机会弹风险提示，要等倒计时结束点「确定」（需插 SIM 卡、登录小米账号）；已打开仍被拒就拔掉数据线重插，再不行重启手机（[#217](https://github.com/rddmwmddr/android-ad-cleaner/issues/217) 上有人重启后恢复）；这两条恢复步骤是 0.2.7 才补进提示的。
 
 ---
 
