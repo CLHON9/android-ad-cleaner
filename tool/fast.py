@@ -507,6 +507,51 @@ class Phone:
         self.say(f"  ✗ 没找到「{text}」")
         return False
 
+    def icon_candidates(self, area=(0.72, 0.0, 1.0, 0.16)):
+        """没有文字、点了才知道去哪的图标（右上角齿轮、更多）：按位置从右往左给候选坐标。
+        整块卡片/列表项点了会进别的页面，按尺寸排除掉。"""
+        x0, y0, x1, y1 = (v * s for v, s in zip(area, (self.W, self.H, self.W, self.H)))
+        out = []
+        for n in self.tree().iter("node"):
+            if n.get("clickable") != "true":
+                continue
+            if (n.get("text") or "").strip() or (n.get("content-desc") or "").strip():
+                continue
+            l, t, r, b = bounds(n)
+            cx, cy = (l + r) // 2, (t + b) // 2
+            if not (x0 <= cx <= x1 and y0 <= cy <= y1 and self.on_screen(n)):
+                continue
+            if r - l > self.W * 0.25 or b - t > self.H * 0.10:
+                continue
+            out.append((cx, cy))
+        out.sort(key=lambda xy: -xy[0])        # 齿轮在最右边，先试它
+        return out
+
+    def tap_icon(self, expect, area=(0.72, 0.0, 1.0, 0.16), tries=3):
+        """点一个没有文字的图标入口，点完要求 expect 里任一文字精确出现在新页面上；
+        点开的不是目标页就退回来换下一个（#292）。游戏中心 14.43.3 把「设置」做成「我的」页右上角的齿轮，
+        没有文字，按文字找永远找不到。
+        用精确匹配：页面上本来就有「隐私政策」之类的文字时，包含匹配会把第一次点击当成成功、不再回退。"""
+        expects = (expect,) if isinstance(expect, str) else tuple(expect)
+        for x, y in self.icon_candidates(area)[:tries]:
+            focus, sig = self.focus(), self.sig()
+            self.click(x, y)
+            end = time.monotonic() + 2.4
+            while True:
+                if any(self.find(e, exact=True) for e in expects):
+                    self.say(f"  · 点开了右上角图标（出现「{expects[0]}」）")
+                    return True
+                if time.monotonic() >= end:     # 页面慢时多等几轮，别把还没画出来的页面 back() 掉
+                    break
+                time.sleep(0.6)
+            # 换了页面或弹出浮层：都要回到原页，不能留在别处接着点下一个候选。
+            # 退回来也要等页面站稳，否则下一个候选的坐标可能落在跳页动画上。
+            if self.focus() != focus or self.sig() != sig:
+                self.back()
+                time.sleep(0.6)
+        self.say("  · 当前页文字：" + " / ".join(t for t, _, _ in self.texts()[:20]))
+        return False
+
     def go(self, text, expect, tries=3, exact=True):
         """点 text，直到 expect 出现在屏幕上（被弹窗吞掉就再点）。"""
         for _ in range(tries):
