@@ -1,6 +1,6 @@
 """给文档截客户端各页面：程序自己切换页面、截自己的窗口，不模拟鼠标。
 用法（macOS，手机连着且已解锁）：gui/.venv/bin/python gui/shots.py <序列号> <输出目录>"""
-import os, subprocess, sys, threading, time
+import os, subprocess, sys, time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import app, webview, Quartz
 
