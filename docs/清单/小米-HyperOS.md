@@ -8,7 +8,7 @@
 | Xiaomi 18 Pro Max（M154FF） | HyperOS OS4.0.24，Android 17 | 2026-10-22 实测；2026-10-25 九段脚本重跑通过 |
 | Xiaomi 18 Fold（2608BPX34C） | CP2A.260605.016，Android 17 | 2026-10-24 社区实测（[Issue #2](https://github.com/rddmwmddr/android-ad-cleaner/issues/2)） |
 | Xiaomi 17 Ultra（2512BPNDAC，标准版） | HyperOS OS4.0.5.0.XPACNXM，Android 17 | 2026-10-28 真机实测；专用脚本九段全通过（176 秒，`recipes/xiaomi-2512BPNDAC`） |
-| Xiaomi 15（24129PN74C） | HyperOS OS4.0.0.22.XOCCNXM，Android 17 | 2026-10-29 真机实测；专用脚本九段全通过（189 秒，`recipes/xiaomi-24129PN74C`） |
+| Xiaomi 15（24129PN74C） | HyperOS OS4.0.0.22.XOCCNXM，Android 17 | 2026-10-29 真机实测；专用脚本九段全通过（164 秒，`recipes/xiaomi-24129PN74C`） |
 | Xiaomi Pad 7（2410CRP4CC） | HyperOS OS2.0.208.0.VOZCNXM，Android 15 | 2026-10-28 实测；四段脚本复跑通过，约 61 秒 |
 | REDMI K80 至尊版（25060RK16C） | HyperOS 2（BP2A.250605.031.A3），Android 16 | 2026-10-27 真机实测；专用脚本九段全通过并回读（recipes/redmi-25060RK16C） |
 | REDMI K90 Pro Max（25102RKBEC） | HyperOS OS4.0.2.0.XPMCNXM，Android 17 | 2026-10-27 实测，九段机型脚本全通过（169 秒） |
@@ -26,7 +26,7 @@
 
 ③ **浏览器**：工具栏最右的「设置」图标点进去是**首页编辑面板**（页面布局 / 快捷网址 / 全网热榜），不是设置。主设置要走 底部「菜单」→ 弹窗里同名那一行（头像 / 菜单编辑 / 分享 / 设置），「隐私和安全」在主设置页最底部要滚一段。底栏按钮是 ViewGroup，只认 80 毫秒短按，`input tap` 点了没反应。
 
-主题段与参考脚本一致：桌面入口在 `com.miui.themestore`，打开后转到 `com.android.thememanager`，这个跳转是正常的，不是被别的 App 顶掉。机型脚本 `recipes/xiaomi-24129PN74C/` 已按上面三点写，九段实测重跑 189 秒。
+主题段与参考脚本一致：桌面入口在 `com.miui.themestore`，打开后转到 `com.android.thememanager`，这个跳转是正常的，不是被别的 App 顶掉。机型脚本 `recipes/xiaomi-24129PN74C/` 已按上面三点写，九段实测重跑 164 秒。
 
 **K90 Pro Max 与上面两台的两处差异**：① 设置首页一屏放不下，「隐私与安全」在第二屏，要往下滑一段才看得到；②「隐私与安全」打开的是安全中心的 `PrivacySafetyActivity`，只有「隐私 / 安全」两个分栏、默认停在「隐私」，得先切到「安全」分栏，「更多安全设置」在这一页的最末尾。机型脚本 `recipes/xiaomi-25102RKBEC/` 已按这两点写。
 
