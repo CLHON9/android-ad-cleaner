@@ -10,6 +10,7 @@
 | Xiaomi 17 Ultra（2512BPNDAC，标准版） | HyperOS OS4.0.5.0.XPACNXM，Android 17 | 2026-10-28 真机实测；专用脚本九段全通过（176 秒，`recipes/xiaomi-2512BPNDAC`） |
 | Xiaomi Pad 7（2410CRP4CC） | HyperOS OS2.0.208.0.VOZCNXM，Android 15 | 2026-10-28 实测；四段脚本复跑通过，约 61 秒 |
 | REDMI K80 至尊版（25060RK16C） | HyperOS 2（BP2A.250605.031.A3），Android 16 | 2026-10-27 真机实测；专用脚本九段全通过并回读（recipes/redmi-25060RK16C） |
+| REDMI K80 Pro（24122RKC7C） | HyperOS OS3.0.304.0.WOMCNXM，Android 16 | 2026-10-29 真机实测；首轮借 K70 路径关 20 项，专用脚本九段复跑 172 秒、0 异常（`recipes/redmi-24122RKC7C`，见 [实测记录](../14-红米K80Pro实测.md)） |
 | REDMI K90 Pro Max（25102RKBEC） | HyperOS OS4.0.2.0.XPMCNXM，Android 17 | 2026-10-27 实测，九段机型脚本全通过（169 秒） |
 | Redmi Note 12 Turbo（23049RAD8C） | HyperOS OS3.0.5.0.VMRCNXM，Android 15 | 2026-10-25 实测（九段脚本跑通，用时约 3.5 分钟） |
 | Redmi K70（23113RKC6C） | HyperOS OS3.0.307.0.WNKCNXM，Android 16 | 2026-10-26 无线+有线：9 段专用脚本；当前目标 20 项；本轮实测含已移除的小说 1 项；浏览器「最新资讯」disabled，未操作 |
@@ -77,6 +78,7 @@ REDMI K80 至尊版（HyperOS 2 / Android 16）结构差异：「隐私与安全
 - 🟢 自动更新（和上一项挨着，别点错行）
 - 🔴 隐私设置 → 个性化推荐
 - ⚠️ K90 Pro Max 打开主题商店会落到 `com.android.thememanager` 的 `ThemeResourceProxyTabActivity`；系统广告组件 `com.miui.systemAdSolution` 未挂起时，开屏窗会抢焦点，自动化会被中断。先执行 `run.py -s 序列号 suspend com.miui.systemAdSolution`（可还原）再跑这一段。
+- ⚠️ REDMI K80 Pro（HyperOS 3.0.304.0）同样会跳包：`com.miui.themestore` 拉起后立刻变成 `com.android.thememanager`，`p.start()` 的前台校验会判「启动后离开前台」并停段。直达 `com.android.thememanager/.ThemeResourceProxyTabActivity` 后「我的 → 齿轮」稳定可达。
 
 ## 6. 浏览器
 
@@ -86,6 +88,7 @@ REDMI K80 至尊版（HyperOS 2 / Android 16）结构差异：「隐私与安全
 - 🔴 隐私和安全 → 个性化内容推荐、个性化广告推荐（新旧版都有）
 - 🔴 旧版：主页设置 → 宫格位推送；搜索设置 → 显示猜你想搜模块；功能设置 → 小说（🟢 我的网盘）
 - ⚠️ 新版这三项都没有。主页设置只剩「探索版 / 自定义主页」，自定义主页要填网址，`about:blank` 填不进去，可以填 `https://www.bing.com`。按你的喜好选，不选也行。
+- ⚠️ REDMI K80 Pro（浏览器 20.x，HyperOS 3.0.304.0）：这版有「我的」，但它是**顶部标签**（主页 / 视频 / AI搜索 / 免费小说 / 我的），不是底部；「设置」是顶部右侧的齿轮 `ImageView`，文字就是「设置」（1080 宽下约 `[922,133]-[1038,249]`）。冷启动会偶发被启动过渡窗判成「离开前台」，脚本里先 `am force-stop` 再直达 `BrowserActivity` 重试；80 毫秒短按点不动齿轮时改用 `input tap`。
 - ⚠️ 浏览器会弹小米账号登录框，点「取消」。
 
 **Xiaomi 17 Ultra（浏览器 20.29.1031010，2026-10-28）**：

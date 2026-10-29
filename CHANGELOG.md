@@ -7,6 +7,7 @@
 | 第 2 步「改动前快照」在小米 15 / HyperOS 4 上三个包列表文件是 0 字节、命令却报成功；`check` 里以前手工 `pm disable-user` 关过的快应用被判成「未关闭」 | [#192](https://github.com/rddmwmddr/android-ad-cleaner/issues/192) | 这台 ROM 上 `pm list packages` 任何参数都无输出且 exit 0。新增 `pkg_list()`：`pm list` 读不到包名时回退 `cmd package list packages`（参数相同），快照的 sys / user / disabled 三份清单和 `quickapps()` 的已禁用集合都走它。`backup` 先用不带参数的完整清单探活（带过滤参数的清单本来就可能为空），两条通路都读不到包名时报失败、不留半成品快照目录；快照里保留手机返回的报错原文，便于排障 |
 | 纵横小说同一渠道在清单里出现两行，差别只是渠道 ID 和名称末尾的空格；带空格那行「未确认」，收尾误报「营销渠道仍开着 1 个」 | [#194](https://github.com/rddmwmddr/android-ad-cleaner/issues/194) | 读系统回读时渠道 ID、渠道名都去掉两头空格，按（包名、渠道 ID）合并成一条；已删除的重复记录不覆盖有效记录。读清单时同样去空格并按渠道去重，旧清单也能用，收尾按渠道计数 |
 | 「关闭营销通知」在 HyperOS 3 / Android 16 跑到第 19 条左右整段中断，报 `AdbError: shell output invalid` | [#205](https://github.com/rddmwmddr/android-ad-cleaner/issues/205) | 读锁屏、焦点窗口、通知权限的 `dumpsys` 管道末尾原来用 `grep -m4` / `grep -m1` / `head -12`，读够就退出，`dumpsys` 收到 SIGPIPE 后往输出里写 Broken pipe，adbutils 找不到结束标记便抛异常。现在改成 `grep` 过滤后由 `sed -n` 截断，它会读完整个输入再输出，行数和取首行的语义都不变。REDMI K80 / HyperOS 3 报告者实测去掉 `-m1` 后 71 条渠道全部关闭 |
+| REDMI K80 Pro（24122RKC7C / HyperOS OS3.0.304.0.WOMCNXM / Android 16）没有专用脚本，同品牌参考是 OS4.0 的 `xiaomi-M154FF`；主题商店和浏览器冷启动会被前台校验判成「启动后离开前台」而停段 | 本机实测 2026-10-29 | 新增 `recipes/redmi-24122RKC7C`（九段）和 `tests/test_k80pro_recipe.py`：主题直达 `com.android.thememanager/.ThemeResourceProxyTabActivity`；浏览器先 `am force-stop` 再直达 `BrowserActivity`、失败重试一次，齿轮短按点不动时回退 `input tap` 并回读 Activity。首轮借 K70 路径关 20 项，专用脚本复跑九段 172 秒、0 调整、0 异常。同机实测通知渠道 48 个全关（54 候选剔 6 个服务类），`msa` 挂起、快应用关闭。见 [实测记录](docs/14-红米K80Pro实测.md) |
 
 ## 0.2.7 · 2026-10-29
 
