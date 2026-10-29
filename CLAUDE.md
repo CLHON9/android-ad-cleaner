@@ -84,3 +84,17 @@
 - 最新 #21 小米 10 横屏/混合热榜、msa 不支持时的失败状态，以及 #24 荣耀服务通知选择已修复。小米 10 / 荣耀 Magic7 Pro 专用机型适配与真机回归仍未完成。#22 / #23 原生鸿蒙仍不支持，不把连接提示当作适配完成。逐项见 [社区问题处理记录](docs/09-社区问题处理.md)。
 - #19 / #20 的渠道、备份、快应用问题按当前引擎实现，未整单合并 PR，不提供关闭整应用通知来替代渠道的功能。#10 / #15 专用脚本仍待审查；对应 vivo / 荣耀 / Windows 报告者环境及 Intel 真机的验证需补齐。
 - 发布资源由 `gui/bundle_data.py` 统一列出；原始日志、备份、本地测试机型不随源码或安装包发布。新版网盘文件尚未上传，不复用旧版网盘链接冒充新包。
+
+## Agent skills
+
+### Issue tracker
+
+GitHub Issues（`gh` CLI）。见 `docs/agents/issue-tracker.md`。
+
+### Triage labels
+
+默认五个角色标签，标签名即角色名。见 `docs/agents/triage-labels.md`。
+
+### Domain docs
+
+single-context：根目录 `CONTEXT.md` + `docs/adr/`。见 `docs/agents/domain.md`。
