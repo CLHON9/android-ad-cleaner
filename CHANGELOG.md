@@ -2,6 +2,8 @@
 
 ## 未发布
 
+- 新增 Redmi K70 Pro（23117RK66C / HyperOS OS3.0.306.0.WNMCNXM / Android 16）专用脚本与[实测记录](docs/14-红米K70Pro实测.md)：九段整轮实测 235 秒，逐页确认 25 项目标的关闭状态及其他开关状态，0 调整、0 步骤异常。
+
 | 现象 | 来源 | 处理 |
 |---|---|---|
 | 复用外部 adb server 时，用户按提示关掉自带 adb 的工具（Iriun Webcam 等）后整轮中断，后面三段连报「本机没有安装 xxx」 | [#293](https://github.com/rddmwmddr/android-ad-cleaner/issues/293) | 客户端连的是 `127.0.0.1:5037`，对方先起的 server 被复用，对方退出后连接彻底消失，而 `pm path` 在断连时同样没有输出。`start()` 启动失败且 `pm path` 无包名时先分辨：命令输出里带 adb 客户端错误（`device … not found` 等）或手机已不在设备列表（`adb_link.present()`）就报「adb 连接断开」并附排查说明，不再报成没装。首次确认断连后本轮记下状态，剩下的机型脚本段立刻跳过、只报一句「连接已断开」，不再逐段等重试或逐段误判。没有能复现的外部 adb server 环境，仅单元回归 |
