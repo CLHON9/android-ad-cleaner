@@ -7,6 +7,7 @@ import ntpath
 import os
 from pathlib import Path
 import re
+import subprocess
 import sys
 import tempfile
 import types
@@ -436,6 +437,89 @@ class BackupTests(unittest.TestCase):
         self.assertEqual(calls[0], "pm list packages")          # 探活用完整清单，只有它不可能合法为空
         self.assertEqual(calls[1:], ["pm list packages --user 0 -s", "pm list packages --user 0 -3",
                                      "pm list packages --user 0 -d"])
+
+
+class ExternalAdbServerTests(unittest.TestCase):
+    """#293：复用了外部 adb server（Iriun 等），对方退出后整轮中断，
+    而且 pm path 同样没输出，断连被报成「本机没有安装」，三段连报。"""
+
+    def phone(self):
+        p = fast.Phone.__new__(fast.Phone)
+        p.serial, p.lost, p.W, p.H = "S", False, 1080, 1920
+        p.log, p.miss, p.changed = False, 0, []
+        p.d = Mock()
+        p.d.app_stop = Mock()
+        return p
+
+    def test_disconnected_device_is_not_reported_as_missing_app(self):
+        p = self.phone()
+        p.d.shell.side_effect = [types.SimpleNamespace(exit_code=1, output=""),
+                                 types.SimpleNamespace(exit_code=0, output="")]
+        with patch.object(adb_link, "detached", return_value=True):
+            with self.assertRaises(adb_link.DeviceLost) as raised:
+                p.start("com.heytap.yoli")
+        self.assertNotIn("没有安装", str(raised.exception))
+        self.assertIn("手机助手", str(raised.exception))        # 完整排查说明只在这一处出现
+        self.assertTrue(p.lost)
+
+    def test_client_error_text_alone_identifies_the_disconnect(self):
+        p = self.phone()
+        p.d.shell.side_effect = [types.SimpleNamespace(exit_code=0, output="error: device 'S' not found"),
+                                 types.SimpleNamespace(exit_code=0, output="")]
+        with patch.object(adb_link, "detached") as detached:
+            with self.assertRaises(adb_link.DeviceLost):
+                p.start("com.heytap.yoli")
+        detached.assert_not_called()                           # 输出已经说明是断连，不再多查一次
+
+    def test_missing_app_is_still_named_when_phone_is_there(self):
+        p = self.phone()
+        p.d.shell.side_effect = [types.SimpleNamespace(exit_code=0, output="No activities found to run, monkey aborted."),
+                                 types.SimpleNamespace(exit_code=0, output="")]
+        with patch.object(adb_link, "detached", return_value=False):
+            with self.assertRaisesRegex(RuntimeError, "本机没有安装 com.heytap.yoli"):
+                p.start("com.heytap.yoli")
+        self.assertFalse(p.lost)
+
+    def test_unknown_connection_state_is_not_reported_as_disconnect(self):
+        # 找不到 adb、get-state 超时：只能算状态未知，不能把参考脚本里的「没装」报成断连。
+        with patch.object(adb_link, "adb_path", return_value=None):
+            self.assertFalse(adb_link.detached("S"))
+        with patch.object(adb_link, "adb_path", return_value="/usr/bin/adb"), \
+             patch.object(adb_link.subprocess, "run", side_effect=subprocess.TimeoutExpired("adb", 8)):
+            self.assertFalse(adb_link.detached("S"))
+
+    def test_client_answer_names_the_disconnect(self):
+        with patch.object(adb_link, "adb_path", return_value="/usr/bin/adb"), \
+             patch.object(adb_link.subprocess, "run", return_value=types.SimpleNamespace(
+                 returncode=1, stdout="", stderr="adb: device 'S' not found")):
+            self.assertTrue(adb_link.detached("S"))
+        with patch.object(adb_link, "adb_path", return_value="/usr/bin/adb"), \
+             patch.object(adb_link.subprocess, "run", return_value=types.SimpleNamespace(
+                 returncode=0, stdout="device\n", stderr="")):
+            self.assertFalse(adb_link.detached("S"))
+
+    def test_lost_screen_library_error_marks_the_run_lost(self):
+        p = self.phone()
+        p.d.dump_hierarchy.side_effect = Exception("HTTPConnectionPool(host='127.0.0.1', port=5037): Max retries exceeded")
+        with self.assertRaises(Exception):
+            p.tree()
+        self.assertTrue(p.lost)                                # 后面的段据此快速跳过
+
+    def test_confirmed_loss_skips_remaining_steps_without_touching_adb(self):
+        p = self.phone()
+        p.lost = True
+        for step in (lambda: p.start("com.heytap.yoli"), p.tree, p.focus, lambda: p.click(10, 10),
+                     lambda: p._resilient_shell("dumpsys window")):
+            with self.assertRaises(adb_link.DeviceLost) as raised:
+                step()
+            self.assertEqual(str(raised.exception), adb_link.REPEAT)   # 后面的段只报一句
+        p.d.shell.assert_not_called()
+        p.d.dump_hierarchy.assert_not_called()
+        p.d.window_size.assert_not_called()
+        p.d.app_stop.assert_not_called()
+
+
+
 
 
 class PackageListTests(unittest.TestCase):

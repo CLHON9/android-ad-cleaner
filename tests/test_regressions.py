@@ -16,12 +16,14 @@ from unittest.mock import Mock, patch
 import xml.etree.ElementTree as ET
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tool"))
+import adb_link
 import fast
 import run
 
 
 def phone():
     p = fast.Phone.__new__(fast.Phone)
+    p.serial, p.lost = "S", False
     p.W, p.H = 1168, 1712
     p.log, p.miss, p.changed = False, 0, []
     p.d = Mock()
@@ -214,8 +216,9 @@ class LaunchTests(unittest.TestCase):
         p.d.shell.side_effect = [types.SimpleNamespace(exit_code=0, output="No activities found to run, monkey aborted."),
                                  types.SimpleNamespace(exit_code=0, output="")]
         p.d.app_stop = Mock()
-        with self.assertRaisesRegex(RuntimeError, "没有安装 com.honor.browser"):
-            p.start("com.honor.browser")
+        with patch.object(adb_link, "detached", return_value=False):    # 手机还在，只是没装这个 App
+            with self.assertRaisesRegex(RuntimeError, "没有安装 com.honor.browser"):
+                p.start("com.honor.browser")
 
     def test_runtime_permission_only_clicks_explicit_deny_button(self):
         p = phone(); p.focus = Mock(return_value="com.android.permissioncontroller/.permission.ui.GrantPermissionsActivity")
@@ -362,6 +365,9 @@ class LaunchTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "child failed"):
                 run.main()
         self.assertEqual(sh.call_args.args, ("test", "settings put global stay_on_while_plugged_in 15"))
+
+
+
 
 
 if __name__ == "__main__":
