@@ -1,4 +1,6 @@
 """0.2.2：只读扫描不依赖 UiAutomation，初始化失败保留完整原因。"""
+import os
+os.environ.setdefault("AAC_NO_SOUND", "1")     # 客户端提示音：测试里不出声
 import contextlib
 import importlib.util
 import io

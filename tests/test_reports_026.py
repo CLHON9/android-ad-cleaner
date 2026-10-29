@@ -1,5 +1,7 @@
 """0.2.6 发布当天（2026-10-28）33 份错误日志的回归：华为 / 旧版荣耀卡片布局、vivo 读到旧页、
 个别渠道没认出就算失败、断线带堆栈、停止算失败、空报告，以及清单里显示应用名。不用手机。"""
+import os
+os.environ.setdefault("AAC_NO_SOUND", "1")     # 客户端提示音：测试里不出声
 import contextlib
 import importlib.util
 import io

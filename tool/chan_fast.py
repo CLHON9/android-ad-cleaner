@@ -86,6 +86,7 @@ SKIP = re.compile(r"下载|更新|安装|上传|订单|物流|快递|交易|支�
                   r"|上层显示"     # 「“钱包”正在其他应用的上层显示内容」是悬浮窗提示，名字带「内容」被误选（#115）
                   r"|提取|传输|已共享|正在进行", re.I)   # 识屏「内容提取」（系统锁定）、三星「内容已传输」等功能通知（错误日志 10-27）
 GREYED = "系统锁定了这个渠道（开关是灰的），不能关闭"
+APP_DENIED = "这个应用的通知已整体关闭（系统通知权限），渠道不会弹出，未改动"
 RETRY = ("未确认", "渠道页或开关已变化", "点击后渠道状态未改变")   # 页面慢可能造成的失败，一批跑完再试一次
 RETRY_MAX = 10
 LISTS = re.compile(r"ListView|RecyclerView|ScrollView", re.I)
@@ -101,9 +102,11 @@ def parse(p, locked=None):
     以前按包名混在一起：界面已关，回读却拿到另一空间的「开」。
     locked：传入集合时，收集系统不允许关闭的渠道（系统应用固定通知权限、渠道本身不可屏蔽，#134）。"""
     txt = p.d.shell("dumpsys notification --noredact", timeout=60).output
-    if "PackagePreferences:" not in txt:
+    # 安卓 8 / 9 的段名是「per-package config:」（RankingHelper），10 起是「PackagePreferences:」（#258 海信 Android 9）
+    start = next((k for k in (txt.find("PackagePreferences:"), txt.find("per-package config:")) if k >= 0), -1)
+    if start < 0:
         raise RuntimeError("读不到通知渠道状态，停止操作；请检查 USB 调试连接和系统权限")
-    txt = txt[txt.find("PackagePreferences:"):]
+    txt = txt[start:]
     cur, fixed, app_off, d = None, False, {}, {}
     for line in txt.splitlines():
         m = re.match(r"\s*AppSettings: (\S+)(?: \((\d+)\))?", line)
@@ -429,6 +432,16 @@ def page_hint(p, name):
         return ""
 
 
+def notifications_denied(p, pk):
+    """安卓 13 起应用通知总开关是 POST_NOTIFICATIONS 权限。有的系统 dumpsys notification 看不出来：
+    渠道页的开关显示「关」，渠道记录仍是「开」（三星 9 个、vivo 2 个，错误日志 10-29；华为 #241 同样现象）。"""
+    try:
+        out = p.d.shell(f"dumpsys package {shlex.quote(pk)} | grep -m3 'POST_NOTIFICATIONS: granted='").output
+    except Exception:
+        return False
+    return isinstance(out, str) and "POST_NOTIFICATIONS: granted=false" in out and "POST_NOTIFICATIONS: granted=true" not in out
+
+
 def disabled_at(p, xy):
     """开关是灰的（系统锁定的渠道）：点了也不会变，不再连点三次再报「状态未改变」。"""
     for n in p.tree().iter("node"):
@@ -449,6 +462,7 @@ def undo(p, name, xy, want_on):
 
 
 def toggle(p, pk, cid, want_on, name="", allowed=()):
+    name = (name or "").strip()     # 渠道名可能带空格（一加 13「福利活动 」），页面文字是去掉空格的（错误日志 10-29）
     try:
         if p.locked():
             raise ScreenLocked("手机锁屏了")
@@ -495,6 +509,8 @@ def toggle(p, pk, cid, want_on, name="", allowed=()):
             if state(current, apps, pk, cid) == desired:
                 return None
             if sw[1] == want_on:
+                if not want_on and notifications_denied(p, pk):
+                    return APP_DENIED
                 return "界面状态与渠道实际状态不一致，未继续点击"
             time.sleep(0.25 + 0.3 * attempt)
         return "点击后渠道状态未改变"
@@ -631,12 +647,12 @@ def run(a):
                         print(f"  ✗ {e}  {label}")
                         break
                     n += not second
-                    if err == GREYED or not err:
+                    if err in (GREYED, APP_DENIED) or not err:
                         failures -= second      # 重试成功：第一遍记下的失败撤销
                         done += 1
-                    if err == GREYED:
+                    if err in (GREYED, APP_DENIED):
                         greyed.add((pk, cid))
-                        print(f"  · 系统锁定（开关是灰的），不能关闭，不算失败  {label}")
+                        print(f"  · {'系统锁定（开关是灰的），不能关闭' if err == GREYED else '应用通知已整体关闭，渠道不会弹出'}，不算失败  {label}")
                         continue
                     if err:
                         failures += not second

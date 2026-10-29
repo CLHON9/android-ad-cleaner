@@ -5,7 +5,7 @@
 后台：tool/run.py、tool/fast.py、tool/chan_fast.py，以子进程运行，日志实时回传界面。
 打包后没有独立的 Python，子进程用「本程序 --cli 脚本名 参数…」的方式启动。
 """
-import json, os, platform, re, runpy, shutil, subprocess, sys, threading, time, urllib.error, urllib.request, uuid, zipfile
+import hashlib, json, os, platform, re, runpy, shutil, subprocess, sys, threading, time, urllib.error, urllib.request, uuid, zipfile
 from pathlib import Path
 
 APP_NAME = "安卓去广告"
@@ -67,7 +67,17 @@ def cli_main():
 
 
 # ---------- adb ----------
-ADB_URL = {
+# adb 下载（#273：从 Google 下载失败）。固定版本先从官网、再从腾讯云镜像下，都核对 SHA-256；
+# 校验值按 Google 官方清单 repository2-3.xml 的 SHA-1 核过（2026-10-29，两处文件一致）。都失败再从官网下最新版。
+ADB_VERSION = "37.0.1"
+ADB_PINNED = {
+    "Windows": ("platform-tools_r37.0.1-win.zip", "45f4d63113e895ebde0c90f194099a4676b6ac653bd28d54314a9e022bbc1a99"),
+    "Darwin": ("platform-tools_r37.0.1-darwin.zip", "ee39ad5967e95c2a07f04dbcbde96b1a0c916ba376096db5d2f498b7727a5d1d"),
+    "Linux": ("platform-tools_r37.0.1-linux.zip", "d230f13842f60f782a8645f9c813f8f845bf36089ea7289f28c48f17979313f1"),
+}
+ADB_MIRRORS = (("Google 官网", "https://dl.google.com/android/repository/"),
+               ("腾讯云镜像", "https://mirrors.cloud.tencent.com/AndroidSDK/"))
+ADB_LATEST = {
     "Darwin": "https://dl.google.com/android/repository/platform-tools-latest-darwin.zip",
     "Windows": "https://dl.google.com/android/repository/platform-tools-latest-windows.zip",
     "Linux": "https://dl.google.com/android/repository/platform-tools-latest-linux.zip",
@@ -109,6 +119,28 @@ def adb_present(adb, serial):
     except (OSError, subprocess.TimeoutExpired):
         return False
     return out.strip() == "device"
+
+
+CHIME_GAP = 3       # 秒：几件事挤在一起时只响一次
+_last_chime = [0.0]
+
+
+def chime():
+    """提示音（gui/web/chime.wav，两个柔和的音，不到 1 秒，由 gui/make_chime.py 生成）：
+    执行结束、暂停生效、手机锁屏要解锁时各响一次。放不出来就算了，不影响执行。"""
+    now = time.time()
+    if os.environ.get("AAC_NO_SOUND") or now - _last_chime[0] < CHIME_GAP:
+        return                          # AAC_NO_SOUND：回归测试不出声
+    _last_chime[0] = now
+    path = os.path.join(BASE, "gui", "web", "chime.wav")
+    try:
+        if IS_WIN:
+            import winsound
+            winsound.PlaySound(path, winsound.SND_FILENAME | winsound.SND_ASYNC | winsound.SND_NODEFAULT)
+        elif platform.system() == "Darwin":
+            subprocess.Popen(["afplay", path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception:
+        pass
 
 
 def pause_file():
@@ -325,20 +357,40 @@ class Api:
             return
         threading.Thread(target=self._download, daemon=True).start()
 
+    def adb_sources(self):
+        """[(来源名, 网址, sha256 或 None)]：固定版本两处，最后是官网最新版。"""
+        name, digest = ADB_PINNED[platform.system()]
+        return [(label, base + name, digest) for label, base in ADB_MIRRORS] + \
+               [("Google 官网（最新版）", ADB_LATEST[platform.system()], None)]
+
+    def _fetch(self, label, url, digest, zp):
+        self.dl = {"state": "running", "pct": 0, "msg": f"正在从{label}下载 platform-tools……"}
+        h = hashlib.sha256()
+        request = urllib.request.Request(url, headers={"User-Agent": f"AndroidAdCleaner/{VERSION}"})
+        with urllib.request.urlopen(request, timeout=20) as r, open(zp, "wb") as f:
+            total = int(r.headers.get("Content-Length") or 0); got = 0
+            while True:
+                b = r.read(65536)
+                if not b:
+                    break
+                f.write(b); h.update(b); got += len(b)
+                if total:
+                    self.dl["pct"] = int(got * 100 / total)
+        if digest and h.hexdigest() != digest:
+            raise ValueError("文件校验不对，可能下载不完整或被改动")
+
     def _download(self):
-        self.dl = {"state": "running", "pct": 0, "msg": "正在从 Google 官网下载 platform-tools……"}
+        zp = os.path.join(DATA, "platform-tools.zip")
+        errors = []
         try:
-            url = ADB_URL[platform.system()]
-            zp = os.path.join(DATA, "platform-tools.zip")
-            with urllib.request.urlopen(url, timeout=30) as r, open(zp, "wb") as f:
-                total = int(r.headers.get("Content-Length") or 0); got = 0
-                while True:
-                    b = r.read(65536)
-                    if not b:
-                        break
-                    f.write(b); got += len(b)
-                    if total:
-                        self.dl["pct"] = int(got * 100 / total)
+            for label, url, digest in self.adb_sources():
+                try:
+                    self._fetch(label, url, digest, zp)
+                    break
+                except Exception as e:
+                    errors.append(f"{label}：{e}")
+            else:
+                raise RuntimeError("；".join(errors))
             with zipfile.ZipFile(zp) as z:
                 z.extractall(DATA)
             os.remove(zp)
@@ -349,6 +401,10 @@ class Api:
             self.dl = {"state": "done", "pct": 100, "msg": "adb 已就绪"}
         except Exception as e:
             self.dl = {"state": "error", "pct": 0, "msg": f"下载失败：{e}"}
+            try:
+                os.remove(zp)
+            except OSError:
+                pass
 
     def download_state(self):
         return self.dl
@@ -482,6 +538,9 @@ class Api:
         s = s.rstrip("\n")
         if s.startswith("⏸ 已暂停"):
             self.job["paused"] = True
+            chime()                     # 可以拿手机了
+        elif "手机锁屏了：请解锁手机" in s:
+            chime()                     # 要机主来解锁
         elif s.startswith("▶ 继续执行"):
             self.job["paused"] = False
         self.job["lines"].append(s)
@@ -560,6 +619,8 @@ class Api:
                 if error.get("recovery"):
                     j["recovery"] = error["recovery"]
         self.resume()
+        if not j["cancel"]:
+            chime()                     # 执行结束（成功或有步骤没成功都响，提醒回来看结果）
         j["running"] = False
         j["proc"] = None
         self._log(f"\n执行结束，用时 {round(time.time() - j['t0'])} 秒" if not j["cancel"] else "\n已停止")

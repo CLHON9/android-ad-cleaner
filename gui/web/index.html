@@ -176,7 +176,7 @@ function showConnect(){
 }
 function renderAdb(){
   $("#adbbox").innerHTML = `<div class="card"><h3>第一次使用：需要 adb 工具</h3>
-    <p class="lead" style="margin:0 0 12px">adb 是 Google 官方的安卓调试工具，用来和手机通信。点下面的按钮从 Google 官网下载（约 10 MB），下载即表示同意 Android SDK 平台工具的使用条款。</p>
+    <p class="lead" style="margin:0 0 12px">adb 是 Google 官方的安卓调试工具，用来和手机通信。点下面的按钮下载（约 10 MB）：先从 Google 官网下，下不了再换腾讯云镜像，下完核对文件校验值。下载即表示同意 Android SDK 平台工具的使用条款。</p>
     <div class="row"><button class="btn" id="dlbtn" onclick="dlAdb()">下载 adb</button><span id="dlmsg" class="lead" style="margin:0"></span></div>
     <div class="bar hide" id="dlbar" style="margin-top:12px"><i style="width:0"></i></div></div>`;
 }
@@ -228,7 +228,7 @@ async function showDetect(){
   const qa = st.quickapps, qaOff = qa.filter(q => q.closed).length;
   const warns = [];
   if (st.locked) warns.push(`<div class="note warn">手机锁屏了。请解锁手机并保持亮屏，然后点「重新检测」。</div>`);
-  if (st.input_blocked) warns.push(`<div class="note bad">电脑发出的点击被手机拒绝了。小米 / Redmi / POCO 要在「开发者选项」里再打开「USB 调试（安全设置）」（需插 SIM 卡、登录小米账号），打开后点「重新检测」。不开它，自动关开关和营销通知都会失败，中途还会锁屏。</div>`);
+  if (st.input_blocked) warns.push(`<div class="note bad">电脑发出的点击被手机拒绝了。小米 / Redmi / POCO 要在「开发者选项」里再打开「USB 调试（安全设置）」（需插 SIM 卡、登录小米账号）。打开时手机会弹出风险提示，等倒计时结束点「确定」，然后点「重新检测」。<br>已经打开了还是这样：拔掉数据线重新插上再检测；还不行就重启手机再检测。不开它，自动关开关和营销通知都会失败，中途还会锁屏。</div>`);
   const foldBlock = st.fold_open && st.steps.length > 0;
   if (st.fold_open) warns.push(foldBlock
     ? `<div class="note warn">这是展开的折叠屏。展开后是左右分栏，自动关 App 开关会找错位置。请合上手机用外屏，然后点「重新检测」。</div>`

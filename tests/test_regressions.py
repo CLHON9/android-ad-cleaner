@@ -2,10 +2,11 @@
 
 运行：gui/.venv/bin/python -m unittest discover -s tests -v
 """
+import os
+os.environ.setdefault("AAC_NO_SOUND", "1")     # 客户端提示音：测试里不出声
 import contextlib
 import io
 import itertools
-import os
 from pathlib import Path
 import sys
 import tempfile

@@ -54,6 +54,18 @@ def bounds(n):
     return tuple(map(int, m.groups())) if m else (0, 0, 0, 0)
 
 
+def switch_row(node, parents, depth=6):
+    """文字所在的那一行（往上第一个可点 / 可勾选的控件）里有开关：这一行是开关，不是导航入口。"""
+    row = node
+    for _ in range(depth):
+        if row is None:
+            return False
+        if row.get("clickable") == "true" or row.get("checkable") == "true":
+            return any(x.get("checkable") == "true" and "RadioButton" not in (x.get("class") or "") for x in row.iter())
+        row = parents.get(row)
+    return False
+
+
 # 「防止/限制/阻止广告跟踪」「关闭个性化推荐」这类开关是反着的：打开才是保护。不能当广告开关关掉。
 NEG_PREFIX = re.compile(r"^(防止|限制|阻止|禁止|拒绝|不允许|屏蔽|关闭|停用|不接收|不显示|不推送|停止)")
 AD_WORDS = re.compile(r"广告|跟踪|追踪|推荐|个性化|营销|资讯|热搜|热点|定向|画像")   # 不含「推送」：「关闭推送」会连订单通知一起关
@@ -143,12 +155,15 @@ class Phone:
 
     def focus(self):
         """当前焦点窗口（~0.1 秒；u2 的 app_current 在浮窗上会卡 10 秒）。"""
-        out = self.d.shell("dumpsys window | grep -m1 mCurrentFocus").output
-        m = re.search(r"u0 ([^\s}]+)", out)     # vivo OriginOS 3 / Android 13 行尾是「Activity}}」（错误日志 10-27）
-        if m:
-            return m.group(1)
-        out = self.d.shell("dumpsys activity activities | grep -m1 topResumedActivity").output
-        m = re.search(r" (\S+/\S+)", out)
+        out = self.d.shell("dumpsys window | grep -m4 -E 'mCurrentFocus|mFocusedApp'").output
+        # vivo OriginOS 3 / Android 13 行尾是「Activity}}」（错误日志 10-27）。
+        # 焦点窗口为 null 时看 mFocusedApp：华为 HarmonyOS 4.2、vivo OriginOS Ocean 页面明明在，以前报「停在 未知页面」（错误日志 10-29）
+        for field in ("mCurrentFocus", "mFocusedApp"):
+            m = re.search(field + r"=.*? u0 ([^\s}]+)", out)
+            if m:
+                return m.group(1)
+        out = self.d.shell("dumpsys activity activities | grep -m1 -E 'topResumedActivity|mResumedActivity|ResumedActivity:'").output
+        m = re.search(r"u0 (\S+/[^\s}]+)", out) or re.search(r" (\S+/[^\s}]+)", out)
         return m.group(1) if m else ""
 
     def texts(self, root=None):
@@ -351,11 +366,21 @@ class Phone:
             if {t for t, _, _ in self.texts()} <= before:
                 break
 
-    def find(self, text, exact=False, root=None, edge_ok=False):
-        for t, (l, tp, r, b), n in self.texts(root):
-            if (t == text) if exact else (text in t):
+    def find(self, text, exact=False, root=None, edge_ok=False, nav=False):
+        """先找文字完全相同的，再找包含的。nav=True（tap 导航用）：包含匹配不点开关所在行里的文字——
+        那是开关的说明，点了等于拨开关（#247：「隐私」命中「边下边玩」的说明「不涉及隐私数据」，把功能关了）。"""
+        root = root if root is not None else self.tree()
+        items, parents = self.texts(root), None
+        for whole in ((True,) if exact else (True, False)):
+            for t, (l, tp, r, b), n in items:
+                if not ((t == text) if whole else (text in t and t != text)):
+                    continue
                 if b <= tp or r <= l:
                     continue
+                if nav and not whole:
+                    parents = parents or {c: q for q in root.iter() for c in q}
+                    if switch_row(n, parents):
+                        continue
                 cy = (tp + b) // 2
                 if cy < self.H * 0.92:
                     return ((l + r) // 2, cy)
@@ -424,7 +449,7 @@ class Phone:
         if scrolls == 0:
             t0 = time.time()
             while time.time() - t0 < 3.0:
-                xy = self.find(text, exact, edge_ok="tab")
+                xy = self.find(text, exact, edge_ok="tab", nav=True)
                 if xy:
                     b = self.sig(); self.click(*xy); self.settle(b, wait + 0.4)
                     return True
@@ -432,7 +457,7 @@ class Phone:
             self.say(f"  ✗ 没找到「{text}」")
             return False
         if self.miss:                                   # 本段已经走丢：只看当前这一屏
-            xy = self.find(text, exact)
+            xy = self.find(text, exact, nav=True)
             if xy:
                 b = self.sig(); self.click(*xy); self.settle(b, wait + 0.4)
                 self.miss = 0
@@ -443,14 +468,14 @@ class Phone:
         for rnd in range(2 if scrolls else 1):
             for i in range(scrolls + 1):
                 edge = "tab" if scrolls == 0 else False
-                xy = self.find(text, exact, edge_ok=edge)
+                xy = self.find(text, exact, edge_ok=edge, nav=True)
                 if not xy and self.dismiss():
-                    xy = self.find(text, exact, edge_ok=edge)
+                    xy = self.find(text, exact, edge_ok=edge, nav=True)
                 if xy:
                     b = self.sig(); self.click(*xy); self.settle(b, wait + 0.4)
                     return True
                 if i < scrolls and not self.scroll_more():
-                    xy = self.find(text, exact, edge_ok=True)
+                    xy = self.find(text, exact, edge_ok=True, nav=True)
                     if xy:
                         self.click(*xy); time.sleep(wait)
                         return True

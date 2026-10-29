@@ -1,8 +1,9 @@
 """服务占用、失败清理、跨进程互斥与失败后的收尾。"""
+import os
+os.environ.setdefault("AAC_NO_SOUND", "1")     # 客户端提示音：测试里不出声
 import contextlib
 import importlib.util
 import io
-import os
 from pathlib import Path
 import subprocess
 import sys

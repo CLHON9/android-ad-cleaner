@@ -1,5 +1,7 @@
 """2026-10-28 错误日志回归：0.2.5 上线后用户确认上报的 122 份日志归类出的问题。
 不用手机，模拟 dumpsys 输出、页面与系统回读。"""
+import os
+os.environ.setdefault("AAC_NO_SOUND", "1")     # 客户端提示音：测试里不出声
 import contextlib
 import importlib.util
 import io

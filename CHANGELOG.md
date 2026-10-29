@@ -20,8 +20,32 @@
 - **营销通知清单显示软件名**：以前只显示包名，用户认不出是哪个软件。扫描时在手机上运行一个 3 KB 的读名程序（`tool/applabels.dex`，源码 `tool/applabels/Labels.java`），按包名取手机上显示的应用名，跟随系统语言，用完删除；读不到时显示包名。软件名只在界面和清单文件里，不写进日志，上报的错误日志仍不含应用列表。
 - **暂停**：执行中要用手机时点「暂停」，手头这个渠道、机型脚本的这一段或这一步做完后停下，提示「已暂停」再拿手机；点「继续」后重新读屏幕再往下走。
 - **新版本提示**：启动时查一次官网的版本文件（读不到查 GitHub），有新版在左下角提示，点了打开下载页。请求只带客户端版本号。
+- **提示音**：执行结束、暂停生效、手机锁屏要解锁时响一声：两个柔和的音（E5 → A5），不到 1 秒，峰值约 -11 dBFS。音由 `gui/make_chime.py` 合成，Mac 用 `afplay`、Windows 用系统自带的 `winsound` 播放；几件事挤在一起时 3 秒内只响一次。
+- **adb 下载换源**（[#273](https://github.com/rddmwmddr/android-ad-cleaner/issues/273)）：以前只从 Google 官网下，下不了就卡住。现在固定版本 platform-tools 37.0.1 先从 Google 官网、再从腾讯云镜像下，下完核对 SHA-256（校验值按 Google 官方清单核过，两处文件一致）；都失败才从官网下最新版。
 
-237 项设备无关回归通过。Android 15 模拟器：读名程序以 shell 身份读出系统和第三方应用的中文名（设置、日历、信息和一个中文名的第三方应用），7 个包不到 1 秒；扫描输出带软件名，读名程序用完已删除；关闭、暂停、继续、还原一个测试渠道，回读一致。华为、旧版荣耀、vivo 的修改没有真机。
+### 10-29：0.2.6 一夜的上报和 GitHub 新问题
+
+0.2.6 又收到 68 份上报（64 台电脑），大部分是上面已修的几类：vivo「点这一行后页面没变」14 份、华为 / 旧版荣耀 10 份、停止 10 份、空报告 7 份、断开 7 份。新出现的：
+
+| 现象 | 来源 | 处理 |
+|---|---|---|
+| `tap 隐私` 点中「边下边玩」的说明「不涉及隐私数据」，把功能关了 | [#247](https://github.com/rddmwmddr/android-ad-cleaner/issues/247) | 先找文字完全相同的；包含匹配时跳过开关所在行的文字（那是开关的说明，点了等于拨开关） |
+| 三星 9 个渠道「界面状态与渠道实际状态不一致」，渠道页开关显示关、记录仍开 | 上报 3 份；华为 [#241](https://github.com/rddmwmddr/android-ad-cleaner/issues/241) 同样现象 | 推断是这个应用的通知已整体关闭（安卓 13 起是通知权限）。查到权限是关的，记为「应用通知已整体关闭，渠道不会弹出」，不算失败；查不到仍报不一致 |
+| 华为 HarmonyOS 4.2、vivo OriginOS Ocean「停在 未知页面」，页面明明在 | 上报 2 份 | 焦点窗口为空时改看 `mFocusedApp` 和多种 resumed 行 |
+| 一加 13「福利活动 」找不到 | 上报 1 份 | 渠道名两头的空格去掉再比 |
+| 海信 Android 9「读不到通知渠道状态」 | [#258](https://github.com/rddmwmddr/android-ad-cleaner/issues/258) | 安卓 8 / 9 的段名是 `per-package config:`，按 AOSP 9 的输出格式补上。没有安卓 9 真机 |
+| 小米打开「USB 调试（安全设置）」后检测仍说点击被拒 | [#217](https://github.com/rddmwmddr/android-ad-cleaner/issues/217) [#245](https://github.com/rddmwmddr/android-ad-cleaner/issues/245) [#251](https://github.com/rddmwmddr/android-ad-cleaner/issues/251) [#257](https://github.com/rddmwmddr/android-ad-cleaner/issues/257) [#266](https://github.com/rddmwmddr/android-ad-cleaner/issues/266) | 提示里加上：打开时等倒计时点「确定」；仍被拒就拔插数据线，再不行重启手机（#217 有人重启后恢复） |
+| vivo 阅图锁屏「关不掉」：确认框按钮文字在 content-desc | [#246](https://github.com/rddmwmddr/android-ad-cleaner/issues/246) | 合并 PR #249；同时合并 #239（文字在按钮子节点）、#248（跳过屏幕外的旧按钮）对 `confirm()` 的修改 |
+
+华为 #241 的反馈者在 NAM-AL00 上逐行核对：渠道行里标题和开关的 content-desc 都是渠道名，按所在行去重后能找到唯一的开关。这和本版华为的改法一致，自动流程仍待华为用户复测。
+
+### 社区机型脚本
+
+合并 8 个 PR：荣耀 WKL-AN20 MagicOS 11（#262）、OPPO Find X8s PKT110 ColorOS 17（#248）、小米 17 Ultra 标准版（#243）、一加 13T PKX110（#237）、小米 Pad 7（#232）、小米 13 Ultra（#231），vivo 参考脚本 V2547DA 在 OriginOS 6 真机整段跑通（#239），确认框按钮修复（#249）。脚本由贡献者在自己的手机上录制。#239 合并时改了两处：浏览器菜单按钮最多等 3 秒（别的 vivo 型号借用这份脚本时可能没有这个按钮，原写法要等 20 秒）；去掉商店页的「开启，开关」关键词。
+
+realme GT5 Pro 的实测差异和桌面上滑「看点」的关法记进了 OPPO 清单（#271）。
+
+285 项设备无关回归通过。Android 15 模拟器：读名程序以 shell 身份读出系统和第三方应用的中文名（设置、日历、信息和一个中文名的第三方应用），7 个包不到 1 秒；扫描输出带软件名，读名程序用完已删除；关闭、暂停、继续、还原一个测试渠道，回读一致。华为、旧版荣耀、vivo 的修改没有真机。
 
 ## 0.2.6 · 2026-10-28
 

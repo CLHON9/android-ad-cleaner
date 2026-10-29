@@ -134,6 +134,16 @@
 
 欢迎补充：提 PR 改这张表。
 
+### realme 真我 GT5 Pro（RMX3888 / ColorOS 16.0.10.500）
+
+社区实测（[#271](https://github.com/rddmwmddr/android-ad-cleaner/issues/271)），维护者没有这台手机。
+
+- **桌面上滑「看点」**：桌面向上滑弹出全屏资讯流（`com.heytap.browser/.app.news.content.NewsHomeActivity`，由桌面发起，浏览器和看点自己的设置里都关不掉）。关法：长按桌面空白处 → 「桌面设置」→ 桌面模式 → 标准模式 → 关「桌面上滑」。关掉后桌面任何位置上滑都不再打开看点，习惯上滑进浏览器的人也会少这个入口。桌面设置没有能从电脑直接打开的入口，只能手动关。
+- 小布建议的入口叫「NEXT AI」，不叫「OPPO AI」。
+- 软件商店（26.10.2_CN）没有「服务管理」子页；个性化推荐在「账号与隐私 → 隐私授权管理 → 个性化推荐」。
+- `com.coloros.video` 打不开设置页；下拉搜索没有可启动的页面，只能从桌面下滑唤起（桌面下滑设成了通知栏时进不去）。
+- 连不上 adb、`adb devices` 只显示 `offline`，USB 日志里有 `Error [31]` / `Failed to get BOS header`：是线或接口的问题，换线后连上。
+
 ### OPPO Pad Mini（OPD2515 / ColorOS 16.1.0）
 
 以下来自 [Issue #9 的社区实测](https://github.com/rddmwmddr/android-ad-cleaner/issues/9)，尚无本机型整段自动脚本：
