@@ -428,13 +428,94 @@ class BackupTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory, \
              patch.object(run, "latest_backup", return_value=directory), \
              patch.object(run, "info", return_value={"model": "test"}), \
-             patch.object(run, "sh", return_value="") as shell, \
+             patch.object(run, "sh", side_effect=lambda _s, c: "package:com.example" if "list packages" in c else "") as shell, \
              patch.object(sys, "argv", ["run.py", "-s", "test", "backup"]), \
              contextlib.redirect_stdout(io.StringIO()):
             run.main()
         calls = [c.args[1] for c in shell.call_args_list if "pm list packages" in c.args[1]]
-        self.assertEqual(len(calls), 3)
-        self.assertTrue(all("--user 0" in cmd for cmd in calls))
+        self.assertEqual(calls[0], "pm list packages")          # 探活用完整清单，只有它不可能合法为空
+        self.assertEqual(calls[1:], ["pm list packages --user 0 -s", "pm list packages --user 0 -3",
+                                     "pm list packages --user 0 -d"])
+
+
+class PackageListTests(unittest.TestCase):
+    """#192：HyperOS 4 上 `pm list packages` 任何参数都无输出且 exit 0；要回退 `cmd package list`。"""
+
+    def test_pm_list_without_output_falls_back_to_cmd_package(self):
+        with patch.object(run, "sh", side_effect=lambda _s, c: "package:com.example" if c.startswith("cmd package") else ""):
+            self.assertEqual(run.pkg_list("test", "--user 0 -s"), "package:com.example")
+
+    def test_pm_list_output_skips_the_fallback(self):
+        with patch.object(run, "sh", return_value="package:com.example") as shell:
+            self.assertEqual(run.pkg_list("test", "--user 0 -s"), "package:com.example")
+        self.assertEqual([c.args[1] for c in shell.call_args_list], ["pm list packages --user 0 -s"])
+
+    def test_backup_writes_package_lists_when_pm_list_is_silent(self):
+        def shell(_s, cmd):
+            if cmd.startswith("pm list packages"):
+                return ""
+            if cmd.endswith(" -d"):
+                return "package:com.disabled"
+            if "list packages" in cmd:
+                return "package:com.system\npackage:com.user"
+            return ""
+        with tempfile.TemporaryDirectory() as directory, \
+             patch.object(run, "latest_backup", return_value=directory), \
+             patch.object(run, "info", return_value={"model": "test"}), \
+             patch.object(run, "sh", side_effect=shell), \
+             patch.object(sys, "argv", ["run.py", "-s", "test", "backup"]), \
+             contextlib.redirect_stdout(io.StringIO()):
+            run.main()
+            for name in ("sys.txt", "user.txt", "disabled.txt"):
+                self.assertTrue(Path(directory, name).read_text(encoding="utf-8"), name)
+
+    def test_backup_fails_when_both_paths_are_silent(self):
+        with tempfile.TemporaryDirectory() as directory, \
+             patch.object(run, "latest_backup", return_value=directory), \
+             patch.object(run, "info", return_value={"model": "test"}), \
+             patch.object(run, "sh", return_value=""), \
+             patch.object(sys, "argv", ["run.py", "-s", "test", "backup"]), \
+             contextlib.redirect_stderr(io.StringIO()), contextlib.redirect_stdout(io.StringIO()):
+            with self.assertRaises(SystemExit) as raised:
+                run.main()
+            self.assertIn("读不到包列表", str(raised.exception.code))
+            # 失败时不留半成品快照：后续步骤会把最新目录当成「改动前的快照」。
+            self.assertEqual(os.listdir(directory), [])
+
+    def test_backup_keeps_legitimately_empty_filtered_lists(self):
+        def shell(_s, cmd):
+            return "package:com.system" if cmd.endswith(" -s") or cmd == "pm list packages" else ""
+        with tempfile.TemporaryDirectory() as directory, \
+             patch.object(run, "latest_backup", return_value=directory), \
+             patch.object(run, "info", return_value={"model": "test"}), \
+             patch.object(run, "sh", side_effect=shell), \
+             patch.object(sys, "argv", ["run.py", "-s", "test", "backup"]), \
+             contextlib.redirect_stdout(io.StringIO()):
+            run.main()
+            self.assertEqual(Path(directory, "sys.txt").read_text(encoding="utf-8"), "package:com.system")
+            self.assertEqual(Path(directory, "user.txt").read_text(encoding="utf-8"), "")
+
+    def test_package_list_error_text_is_kept_for_troubleshooting(self):
+        def shell(_s, cmd):
+            return "Error: Shell does not have permission to access user 666" if cmd.startswith("pm list") else ""
+        with patch.object(run, "sh", side_effect=shell):
+            self.assertIn("does not have permission", run.pkg_list("test", "--user 0 -d"))
+
+    def test_manually_disabled_quickapp_is_closed_via_cmd_package(self):
+        with patch.object(run, "installed", side_effect=lambda _s, pkg: pkg == "com.miui.hybrid"), \
+             patch.object(run, "quickapp_switch", return_value=None), \
+             patch.object(run, "suspended", return_value=False), \
+             patch.object(run, "sh", side_effect=lambda _s, c: "package:com.miui.hybrid" if c.startswith("cmd package") else ""):
+            entries = run.quickapps("test-device")
+        self.assertTrue(entries[0]["closed"])
+
+    def test_not_disabled_quickapp_stays_open(self):
+        with patch.object(run, "installed", side_effect=lambda _s, pkg: pkg == "com.miui.hybrid"), \
+             patch.object(run, "quickapp_switch", return_value=None), \
+             patch.object(run, "suspended", return_value=False), \
+             patch.object(run, "sh", return_value=""):
+            entries = run.quickapps("test-device")
+        self.assertFalse(entries[0]["closed"])
 
 
 class DesktopTests(unittest.TestCase):
