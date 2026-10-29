@@ -177,5 +177,45 @@ class OppoPkt110ParentChildTests(unittest.TestCase):
             scope["close_named"](["个性化推荐"], "卡片", max_screens=1)
 
 
+    def load_only(self, phone, only):
+        """按段名加载：ONLY 命中的段在 exec 时就执行，异常记进 FAILED_STEPS。"""
+        path = ROOT / "recipes/oppo-PKT110/recipe.py"
+        scope = {"p": phone, "ONLY": only}
+        with contextlib.redirect_stdout(io.StringIO()):
+            exec(compile(path.read_text(encoding="utf-8"), str(path), "exec"), scope)
+        return scope
+
+    def test_game_center_falls_back_to_the_settings_icon(self):
+        """游戏中心 14.43.3 的「设置」是右上角没有文字的齿轮：文字找不到就用图标，不能整段失败（#292）。"""
+        phone = Mock()
+        phone.locked.return_value = False
+        phone.tap.side_effect = lambda text, **kw: text in ("我的", "隐私开关设置", "个性化推荐管理")
+        phone.tap_icon.return_value = True
+        phone.switches.side_effect = [[("个性化推荐", True, (1, 2))], [("个性化推荐", False, (1, 2))]]
+        phone.scroll_more.return_value = False
+        scope = self.load_only(phone, ["游戏中心"])
+        phone.tap_icon.assert_called_once_with(["隐私开关设置", "隐私"])
+        self.assertEqual(scope["FAILED_STEPS"], [])
+
+    def test_game_center_without_the_icon_reports_failure_and_stops(self):
+        """图标也点不开时要报未完成，不能继续点后面的入口装作成功。"""
+        phone = Mock()
+        phone.locked.return_value = False
+        phone.tap.side_effect = lambda text, **kw: text == "我的"
+        phone.tap_icon.return_value = False
+        scope = self.load_only(phone, ["游戏中心"])
+        self.assertEqual(scope["FAILED_STEPS"], ["游戏中心"])
+        self.assertNotIn("隐私开关设置", [c.args[0] for c in phone.tap.call_args_list])
+
+    def test_ad_tracking_tries_the_renamed_entry_first(self):
+        """ColorOS 17 叫「隐私与安全」：先试新名字，不要在旧名字上白翻一轮再打一行失败（#292）。"""
+        phone = Mock()
+        phone.locked.return_value = False
+        phone.tap.return_value = False
+        scope = self.load_only(phone, ["广告跟踪"])
+        self.assertEqual(phone.tap.call_args_list[0].args[0], "隐私与安全")
+        self.assertEqual(scope["FAILED_STEPS"], ["广告跟踪"])
+
+
 if __name__ == "__main__":
     unittest.main()

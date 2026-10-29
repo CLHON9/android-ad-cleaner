@@ -129,9 +129,10 @@ def _():
     每个 App 一个开关、没有总开关，本机 96 个 App，分五屏。"""
     p.d.shell("am start -f 0x10008000 -a android.settings.SETTINGS"); time.sleep(1.2)
     p.miss = 0
-    if not p.tap("隐私", exact=True):          # ColorOS 16 叫「隐私」，17 改叫「隐私与安全」
+    # 17 把入口改名叫「隐私与安全」：先试新名字，免得在旧名字上白翻一轮、还打印一行失败（#292）。
+    if not p.tap("隐私与安全", exact=True):
         p.miss = 0
-        tap("隐私与安全")
+        tap("隐私")
     tap("设备标识与广告")
     tap("广告跟踪")
     time.sleep(1)
@@ -217,12 +218,18 @@ def _():
 @step("游戏中心")
 def _():
     """游戏中心 → 我的 → 设置 → 隐私开关设置 → 个性化推荐管理。
-    「我的」页带「页面升级」弹窗，先关掉；「设置」那一行的文字是「设置,有新通知」。"""
+    「设置」在 14.43.3 上是「我的」页右上角的齿轮图标，没有文字（#292）；旧版是「设置,有新通知」文字行。
+    「我的」页还带「页面升级」弹窗，先关掉。"""
     p.start("com.nearme.gamecenter")
-    p.d(text="我的").click(); time.sleep(1.5)
+    require(p.tap("我的", exact=True, scrolls=0), "没找到底部「我的」")
+    time.sleep(1.2)
+    # dismiss() 遇到带滚动列表的页面就不点文字按钮，「页面升级」弹窗的「我知道了」只能点名点。
     if p.find("我知道了", exact=True):
         p.tap("我知道了", exact=True, scrolls=0); time.sleep(1.2)
-    tap("设置", scrolls=0, exact=False)
+    else:
+        p.dismiss()
+    if not p.tap("设置", exact=False, scrolls=0):
+        require(p.tap_icon(["隐私开关设置", "隐私"]), "没找到设置入口：右上角图标都点过")
     tap("隐私开关设置")
     tap("个性化推荐管理")
     close_named(["个性化推荐"], "游戏中心·个性化推荐")
