@@ -313,31 +313,41 @@ def chain(node, parents, depth=8):
 
 def inline_switch(p, name):
     """应用通知页里渠道行自带开关（荣耀 MagicOS 10 / Android 16，#99）。
-    只认标题与渠道名完全相同、全页唯一的一行，取这一行里唯一的开关；应用总开关的标题在 ALLOW 里，不会命中。"""
+    只认标题与渠道名完全相同、全页唯一合格的一行：行里恰有一个开关、行高合理、行内没有应用总开关。
+    同名文字可能不止一处（华为 HarmonyOS 4 的应用通知页把分组名写在列表里，和渠道名相同，#287）：
+    没有开关或开关对不上的那些行不算，只有剩下一行时才用。"""
     focus = notification_focus(p)
     if not name or name in ALLOW or not focus or vivo_page(focus):
         return None
     root = p.tree()
     parents = {c: n for n in root.iter() for c in n}
     # 开关自己的无障碍标签、整行的标签可能也是渠道名：开关本身不算，同一行只算一次
-    rows = {}
+    rows, missing, reasons = set(), False, []
+    good = []
     for t, b, n in p.texts(root):
-        if t == name and b[1] >= p.H * 0.22 and n.get("checkable") != "true":
-            row, boxes = own_row(p, n, parents)
-            rows.setdefault(id(row), (row, boxes, n))
-    if len(rows) != 1:
-        p.why = f"同名 {len(rows)} 行"
+        if t != name or b[1] < p.H * 0.22 or n.get("checkable") == "true":
+            continue
+        row, boxes = own_row(p, n, parents)
+        if row is None:
+            missing = True
+            reasons.append("没找到所在行；" + chain(n, parents))
+            continue
+        if id(row) in rows:
+            continue
+        rows.add(id(row))
+        l, tp, r, btm = bounds(row)
+        labels = {(x.get("text") or x.get("content-desc") or "").strip() for x in row.iter()}
+        if len(boxes) == 1 and btm - tp <= p.H * 0.2 and not labels & ALLOW:
+            good.append(boxes)
+        else:
+            reasons.append(f"行内开关 {len(boxes)} 个，行高 {round((btm - tp) * 100 / p.H)}%"
+                           + ("，行内有应用总开关" if labels & ALLOW else "") + "；" + chain(n, parents))
+    if len(good) != 1:
+        count = len(rows) + (1 if missing else 0)
+        p.why = (reasons[0] if count == 1 and reasons
+                 else f"同名 {count} 行" + (f"：{reasons[0]}" if reasons else ""))
         return None
-    row, boxes, hit = next(iter(rows.values()))
-    if row is None:
-        p.why = "没找到所在行；" + chain(hit, parents)
-        return None
-    l, t, r, b = bounds(row)
-    labels = {(x.get("text") or x.get("content-desc") or "").strip() for x in row.iter()}
-    if len(boxes) != 1 or b - t > p.H * 0.2 or labels & ALLOW:
-        p.why = (f"行内开关 {len(boxes)} 个，行高 {round((b - t) * 100 / p.H)}%"
-                 + ("，行内有应用总开关" if labels & ALLOW else "") + "；" + chain(hit, parents))
-        return None
+    boxes = good[0]
     bl, bt, br, bb = bounds(boxes[0])
     return name, boxes[0].get("checked") == "true", ((bl + br) // 2, (bt + bb) // 2)
 
