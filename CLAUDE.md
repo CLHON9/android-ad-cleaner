@@ -2,16 +2,16 @@
 
 本仓库的操作规范写在 [AGENTS.md](AGENTS.md)。开工前读完它。
 
-## 2026-10-29 一夜的上报、GitHub 新 Issue、本地合并 8 个 PR（未发布、未推送）
+## 2026-10-29 一夜的上报、GitHub 新 Issue、合并 8 个 PR（0.2.7）
 
 - 0.2.6 一夜 68 份上报多数已由下节修掉；新问题与处理见 CHANGELOG「10-29」。原始导出在 `.private/reports/`、`.private/github/`。
 - `fast.find()` 先找完全相同的文字；`tap()` 传 `nav=True`，包含匹配跳过开关所在行（`switch_row()`），#247 误关「边下边玩」。`confirm()` 合了 #249（content-desc）、#239（子节点文字）、#248（屏幕外）。
 - 应用通知整体关闭（`POST_NOTIFICATIONS` 被拒）而 dumpsys notification 看不出来时，渠道记为 `APP_DENIED`，不算失败。焦点读不到时看 `mFocusedApp`。安卓 8 / 9 的 dumpsys 段名 `per-package config:`。
 - adb 下载：固定 platform-tools 37.0.1，Google → 腾讯云镜像，核对 SHA-256，最后才下官网最新版。升级版本时改 `ADB_PINNED`，校验值按 Google `repository2-3.xml` 的 SHA-1 核对。
 - 提示音 `gui/web/chime.wav` 由 `gui/make_chime.py` 生成；测试设 `AAC_NO_SOUND=1` 不出声。
-- 本地合并 #249 #248 #239 #262 #243 #237 #232 #231，没推送，GitHub 上的 PR 和 Issue 都还没回复。
+- 合并 #249 #248 #239 #262 #243 #237 #232 #231（随 0.2.7 推送）。GitHub 上的 Issue 还没回复；#275 #277 是之后新来的 PR，待审。
 
-## 2026-10-28 0.2.6 当天的错误日志与三项新功能（未发布）
+## 2026-10-28 0.2.6 当天的错误日志与三项新功能（0.2.7）
 
 - 0.2.6 发布后 4 小时 33 份报告，归类与处理见 CHANGELOG「未发布」。华为 / 旧版荣耀 9 份是真问题：0.2.6 找到的「行」是一张卡片，里面不止一个开关；`own_row()` 从渠道名往上找第一个只含一个开关的控件。卡片结构是推断，失败时日志带 `chain()` 控件链（不含文字），下一轮上报核对。
 - vivo：直达渠道页按规则不能直接用，认出 vivo（`p.vivo_seen`）后不再走直达链接；`via_app_page` 等上一页换下去（`titled()`）再读。OriginOS Ocean 的通知页在 `com.android.systemui`，读它时 `p.sysui=True`。

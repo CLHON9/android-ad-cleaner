@@ -9,7 +9,7 @@ import hashlib, json, os, platform, re, runpy, shutil, subprocess, sys, threadin
 from pathlib import Path
 
 APP_NAME = "安卓去广告"
-VERSION = "0.2.6"
+VERSION = "0.2.7"
 FROZEN = getattr(sys, "frozen", False)
 BASE = getattr(sys, "_MEIPASS", os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 TOOL = os.path.join(BASE, "tool")
