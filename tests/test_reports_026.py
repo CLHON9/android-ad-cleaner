@@ -157,6 +157,14 @@ class VivoTests(unittest.TestCase):
         self.assertEqual(p.tree.call_count, 1)
         self.assertTrue(p.vivo_seen)
 
+    def test_deep_link_page_gives_up_without_a_single_poll(self):
+        # 认不出就当场放弃，不是「等满 12 轮再放弃」，也不该多睡一次
+        p = phone([VIVO_CHANNEL], VIVO_FOCUS)
+        p.vivo_app = None
+        with patch.object(chan.time, "sleep") as nap:
+            self.assertIsNone(chan.wait_page(p, "营销通知"))
+        nap.assert_not_called()
+
     def test_known_vivo_skips_the_deep_link(self):
         p = phone([VIVO_APP, VIVO_CHANNEL], VIVO_FOCUS)
         p.vivo_seen = True

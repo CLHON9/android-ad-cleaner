@@ -21,6 +21,7 @@ from row import PATH_DEPTH, bounds, own, path
 from channel_policy import protected_channel
 from troubleshooting import XIAOMI_INPUT
 import adb_link
+import wait
 
 
 class ShellPhone:
@@ -408,20 +409,23 @@ def page_switch(p, name):
     return channel_switch(p, name) or inline_switch(p, name)
 
 
+POLL = 0.2                                  # 认渠道页的采样间隔
+
+
 def wait_page(p, name, rounds=12):
-    previous, stable = None, 0
-    for _ in range(rounds):
-        if p.locked():
-            raise ScreenLocked("手机锁屏了")
+    def sample():
         sw = page_switch(p, name)
+        # vivo 直达的渠道页按规则不直接用（见 channel_switch），不空等（错误日志 10-28：每个渠道 29 秒）
         if sw is None and getattr(p, "vivo_seen", False) is True and not getattr(p, "vivo_app", None):
-            return None     # vivo 直达的渠道页按规则不直接用（见 channel_switch），不空等（错误日志 10-28：每个渠道 29 秒）
-        stable = stable + 1 if sw and sw == previous else (1 if sw else 0)
-        previous = sw
-        if stable >= 3:
-            return sw
-        time.sleep(0.2)
-    return None
+            raise wait.GiveUp()
+        return sw
+
+    def locked():
+        return ScreenLocked("手机锁屏了") if p.locked() else None
+
+    # 预算按次数算：慢机型一轮读屏更久，但「最多试 rounds 次」就是要试满
+    return wait.until(sample, tries=rounds, poll=POLL, same=3,
+                      blocked=locked, now=time.monotonic, sleep=time.sleep)
 
 
 def via_app_page(p, pk, name):
@@ -430,15 +434,18 @@ def via_app_page(p, pk, name):
     p.d.shell("am start -f 0x10008000 -a android.settings.APP_NOTIFICATION_SETTINGS"
               f" --es android.provider.extra.APP_PACKAGE {shlex.quote(pk)}")
     root = None
-    for _ in range(15):
+
+    def app_page_shown():
+        nonlocal root
         # 直达的渠道页可能还没换下去：vivo 两页是同一个 Activity，ColorOS 的渠道页也认得。
         # 以前读到旧页，点标题没反应，报「点这一行后页面没变」（错误日志 10-28）
-        if notification_focus(p):
-            root = p.tree()
-            if not titled(p, root, name):
-                break
-        time.sleep(0.2)
-    else:
+        if not notification_focus(p):
+            return None
+        root = p.tree()
+        return True if not titled(p, root, name) else None
+
+    if not wait.until(app_page_shown, tries=15, poll=POLL,
+                      now=time.monotonic, sleep=time.sleep):
         if not notification_focus(p):
             p.stage = "应用通知页没有打开"
             return None
