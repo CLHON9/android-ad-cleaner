@@ -8,6 +8,7 @@
 清单.tsv：包名<TAB>渠道id<TAB>说明[<TAB>应用名]，一行一个；# 开头是注释。
 """
 import re, shlex, sys, time, os, subprocess
+from dataclasses import dataclass
 from types import SimpleNamespace
 for _st in (sys.stdout, sys.stderr):
     try:
@@ -85,11 +86,103 @@ SKIP = re.compile(r"下载|更新|安装|上传|订单|物流|快递|交易|支�
                   r"|热点和网络共享|智能热点|红包助手|盗窃|驾驶状态|权限建议|运营商|警告|告警|实时活动|赛事|护眼"
                   r"|上层显示"     # 「“钱包”正在其他应用的上层显示内容」是悬浮窗提示，名字带「内容」被误选（#115）
                   r"|提取|传输|已共享|正在进行", re.I)   # 识屏「内容提取」（系统锁定）、三星「内容已传输」等功能通知（错误日志 10-27）
-GREYED = "系统锁定了这个渠道（开关是灰的），不能关闭"
-APP_DENIED = "这个应用的通知已整体关闭（系统通知权限），渠道不会弹出，未改动"
-RETRY = ("未确认", "渠道页或开关已变化", "点击后渠道状态未改变")   # 页面慢可能造成的失败，一批跑完再试一次
 RETRY_MAX = 10
 LISTS = re.compile(r"ListView|RecyclerView|ScrollView", re.I)
+
+# ---------- 一项的结局 ----------
+# 每个出口返回一个 Outcome；怎么记账（算不算失败、要不要重试、算不算拨动了、复查是否豁免）
+# 由下面的 RULES 表决定，不再由返回值的字符串形状暗示。detail 只给人看。
+DONE = "done"                          # 达成目标（关掉或还原）
+GREYED = "greyed"                      # 系统锁定了这个渠道：开关是灰的，点了也不会变
+APP_DENIED = "app_denied"              # 应用通知整体关闭（POST_NOTIFICATIONS 被拒），渠道不会弹出
+PROTECTED = "protected"                # 找机位一类功能通知，不动
+NO_CHANNEL = "no_channel"              # 清单里的渠道在手机上不存在
+DELETED = "deleted"                    # 渠道已删除
+APP_OFF = "app_off"                    # 应用通知总开关关着
+ALREADY = "already"                    # 本来就是目标状态，不打印
+CONFIRMED_LATER = "confirmed_later"    # 第二遍重扫才确认其实已经改好
+NOT_CONFIRMED = "not_confirmed"        # 页面没认出，或重取时页面已变化
+MISMATCH = "mismatch"                  # 界面状态与渠道实际状态不一致
+UNCHANGED = "unchanged"                # 点了三次，渠道状态仍未改变
+ERROR = "error"                        # 意外异常，原文进 detail
+
+
+@dataclass(frozen=True)
+class Outcome:
+    kind: str
+    detail: str = ""
+
+
+# 怎么记账由这一张表决定，不由返回值的形状暗示。键是结局，值是它对整批的四件事：
+# fail_close / fail_open —— 关 / 开的方向上算不算失败（渠道已删除在还原时才算失败）；
+# retry —— 页面慢可能造成的失败，一批跑完再试一次；
+# toggled —— 算不算「实际拨动了」，用于「拨了 N 个」；
+# exempt —— 收尾复查时豁免（系统锁定、应总开关关着，本来就不会变）。
+# 渲染在 render()，是另一个问题：同一结局在不同方向下说法不同。
+RULES = {
+    DONE: dict(fail_close=False, fail_open=False, retry=False, toggled=True, exempt=False),
+    GREYED: dict(fail_close=False, fail_open=False, retry=False, toggled=False, exempt=True),
+    APP_DENIED: dict(fail_close=False, fail_open=False, retry=False, toggled=False, exempt=True),
+    PROTECTED: dict(fail_close=False, fail_open=False, retry=False, toggled=False, exempt=False),
+    NO_CHANNEL: dict(fail_close=True, fail_open=True, retry=False, toggled=False, exempt=False),
+    DELETED: dict(fail_close=False, fail_open=True, retry=False, toggled=False, exempt=False),
+    APP_OFF: dict(fail_close=False, fail_open=True, retry=False, toggled=False, exempt=False),
+    ALREADY: dict(fail_close=False, fail_open=False, retry=False, toggled=False, exempt=False),
+    CONFIRMED_LATER: dict(fail_close=False, fail_open=False, retry=False, toggled=True, exempt=False),
+    NOT_CONFIRMED: dict(fail_close=True, fail_open=True, retry=True, toggled=False, exempt=False),
+    MISMATCH: dict(fail_close=True, fail_open=True, retry=False, toggled=False, exempt=False),
+    UNCHANGED: dict(fail_close=True, fail_open=True, retry=True, toggled=False, exempt=False),
+    ERROR: dict(fail_close=True, fail_open=True, retry=False, toggled=False, exempt=False),
+}
+KINDS = tuple(RULES)
+
+
+def failed(outcome, want_on=False):
+    """这一项要不要算进退出码。"""
+    return RULES[outcome.kind]["fail_open" if want_on else "fail_close"]
+
+
+def retryable(outcome):
+    return RULES[outcome.kind]["retry"]
+
+
+def toggled(outcome):
+    return RULES[outcome.kind]["toggled"]
+
+
+def exempt_from_recheck(outcome):
+    """收尾复查时不算「仍开着」：系统锁定的渠道点不动，应用通知整体关着的渠道不会弹。"""
+    return RULES[outcome.kind]["exempt"]
+
+
+def kind_of_state(st):
+    """state() 的读数 → 结局：清单里的渠道不存在 / 已删除 / 应用通知总开关关着。"""
+    return {"--": NO_CHANNEL, "del": DELETED, "app": APP_OFF}[st]
+
+
+def render(outcome, label, want_on):
+    """这一项的打印行；None 表示不提（已经是目标状态，或第二遍才确认改好、第一遍的 ✗ 已说过）。"""
+    kind = outcome.kind
+    if kind in (ALREADY, CONFIRMED_LATER):
+        return None
+    if kind == PROTECTED:
+        return f"  · 受保护，未改动 {label}（找机位功能通知，{outcome.detail}）"
+    if kind in (NO_CHANNEL, DELETED, APP_OFF):
+        return f"  · 未操作 {label}（渠道不存在、已删除或应用通知已关闭）"
+    if kind == GREYED:
+        return f"  · 系统锁定（开关是灰的），不能关闭，不算失败  {label}"
+    if kind == APP_DENIED:
+        return f"  · 应用通知已整体关闭，渠道不会弹出，不算失败  {label}"
+    if kind == DONE:
+        return f"  {'开' if want_on else '关'}  {label}"
+    return f"  ✗ {outcome.detail}  {label}"
+
+
+def show(outcome, label, want_on):
+    """打印这一项的结局；不打印的项静默通过。"""
+    line = render(outcome, label, want_on)
+    if line:
+        print(line)
 
 
 def truncated(cid):
@@ -492,10 +585,11 @@ def toggle(p, pk, cid, want_on, name="", allowed=()):
             raise ScreenLocked("手机锁屏了")
         before, apps_before = parse(p)
         actual_name = before.get((pk, cid), ("", 0, False))[0]
+        st = state(before, apps_before, pk, cid)
         if not want_on and protected_channel(actual_name, cid, name):
-            return "受保护的找机位功能通知，未关闭"
-        if state(before, apps_before, pk, cid) in ("--", "del", "app"):
-            return "渠道不存在、已删除或应用通知已关闭，未操作"
+            return Outcome(PROTECTED, f"当前状态 {st}")
+        if st in ("--", "del", "app"):
+            return Outcome(kind_of_state(st))
         p.vivo_app, p.why = None, ""
         p.stage = "渠道深链没打开渠道页"
         sw = None
@@ -510,9 +604,10 @@ def toggle(p, pk, cid, want_on, name="", allowed=()):
         if not sw:
             # 只记 Activity、卡在哪一环和开关数量，不记页面内容；适配新系统靠它。
             hint = "；".join(x for x in (getattr(p, "stage", ""), page_hint(p, name), getattr(p, "why", "")) if x)
-            return f"未确认「{name}」渠道页及通知开关，跳过（停在 {p.focus() or '未知页面'}；{hint}）"
+            return Outcome(NOT_CONFIRMED,
+                           f"未确认「{name}」渠道页及通知开关，跳过（停在 {p.focus() or '未知页面'}；{hint}）")
         if disabled_at(p, sw[2]):
-            return GREYED
+            return Outcome(GREYED)
         desired = "ON" if want_on else "off"
         for attempt in range(3):
             # 每次重取页面，开关消失时不能复用旧坐标。
@@ -520,7 +615,7 @@ def toggle(p, pk, cid, want_on, name="", allowed=()):
                 raise ScreenLocked("手机锁屏了")
             sw = wait_page(p, name, rounds=6)
             if not sw:
-                return "渠道页或开关已变化，停止操作"
+                return Outcome(NOT_CONFIRMED, "渠道页或开关已变化，停止操作")
             clicked = sw[1] != want_on
             if clicked:
                 p.click(*sw[2]); time.sleep(0.4); p.confirm()
@@ -531,13 +626,13 @@ def toggle(p, pk, cid, want_on, name="", allowed=()):
                 raise StopBatch(f"点击后{'、'.join(extra)}发生变化，{'已点回原状态' if restored else '没能自动点回'}，"
                                 "停止整批；请在手机上核对该 App 的通知设置")
             if state(current, apps, pk, cid) == desired:
-                return None
+                return Outcome(DONE)
             if sw[1] == want_on:
                 if not want_on and notifications_denied(p, pk):
-                    return APP_DENIED
-                return "界面状态与渠道实际状态不一致，未继续点击"
+                    return Outcome(APP_DENIED)
+                return Outcome(MISMATCH, "界面状态与渠道实际状态不一致，未继续点击")
             time.sleep(0.25 + 0.3 * attempt)
-        return "点击后渠道状态未改变"
+        return Outcome(UNCHANGED, "点击后渠道状态未改变")
     except (StopBatch, adb_link.DeviceLost, ScreenLocked):
         raise                                    # 点错开关、手机断开、锁屏：由整批处理
     except Exception as e:
@@ -545,7 +640,7 @@ def toggle(p, pk, cid, want_on, name="", allowed=()):
         if gone is not None:
             raise gone from e
         if isinstance(e, RuntimeError):
-            return str(e)
+            return Outcome(ERROR, str(e))
         raise
 
 
@@ -603,38 +698,45 @@ def run(a):
         d, app_off = parse(reader)
         allowed = {(pk, cid) for pk, cid, _ in items}
         p = None
-        t0 = time.time(); n = 0; failures = 0
+        t0 = time.time(); changed = 0; failures = 0
         stay_on, awake = None, False
-        greyed, gone, halted = set(), False, False
+        exemptions, gone, halted = set(), False, False
         todo = []
         for pk, cid, label in items:
             st = state(d, app_off, pk, cid)
             if not want and protected_channel(d.get((pk, cid), ("", 0, False))[0], cid, label):
-                print(f"  · 受保护，未改动 {label}（找机位功能通知，当前状态 {st}）")
+                outcome = Outcome(PROTECTED, f"当前状态 {st}")
+            elif st in ("--", "del", "app"):
+                outcome = Outcome(kind_of_state(st))
+            elif (st == "off") != (not want):
+                todo.append((pk, cid, label))       # 要打开手机去拨
                 continue
-            if st in ("--", "del", "app"):
-                print(f"  · 未操作 {label}（渠道不存在、已删除或应用通知已关闭）")
-                if want or st == "--":
-                    failures += 1
-                continue
-            if (st == "off") != (not want):
-                todo.append((pk, cid, label))
-        retry, done = [], 0
+            else:
+                outcome = Outcome(ALREADY)          # 已经是目标状态，不打印
+            show(outcome, label, want)
+            if failed(outcome, want):
+                failures += 1
+        retry, reached = [], 0
         try:
             for second in (False, True):
                 queue = todo
                 if second:
                     # 页面加载慢时一次没认出（错误日志 10-28：关了 93 个剩 1 个，整步算失败）。
                     # 这台已经关成功过才重试；华为那种一个都认不出的不重试，免得白等。
-                    if halted or p is None or not retry or len(retry) > RETRY_MAX or not (done or len(retry) <= 2):
+                    if halted or p is None or not retry or len(retry) > RETRY_MAX or not (reached or len(retry) <= 2):
                         break
                     d, app_off = parse(reader)
                     queue = []
-                    for item in retry:
-                        if (state(d, app_off, item[0], item[1]) == "off") == (not want):
+                    for pk, cid, label in retry:
+                        st = state(d, app_off, pk, cid)
+                        if (st == "off") == (not want):
+                            outcome = Outcome(CONFIRMED_LATER)
                             failures -= 1       # 其实已经改过来了
+                            reached += 1
+                            changed += toggled(outcome)
+                            show(outcome, label, want)
                         else:
-                            queue.append(item)
+                            queue.append((pk, cid, label))
                     if not queue:
                         break
                     print(f"再试一次刚才没确认的 {len(queue)} 个渠道", flush=True)
@@ -655,34 +757,33 @@ def run(a):
                     pause_point()
                     try:
                         try:
-                            err = toggle(p, pk, cid, want, d[(pk, cid)][0], allowed)
+                            outcome = toggle(p, pk, cid, want, d[(pk, cid)][0], allowed)
                         except ScreenLocked:
                             if not p.wait_unlocked(60):
                                 raise
-                            err = toggle(p, pk, cid, want, d[(pk, cid)][0], allowed)
+                            outcome = toggle(p, pk, cid, want, d[(pk, cid)][0], allowed)
                     except ScreenLocked:
                         failures += 1
                         print(f"  ✗ 手机锁屏了，停在「{label}」，剩下 {len(queue) - index} 项没有处理。请解锁手机、保持亮屏后重试")
                         halted = True
                         break
                     except (StopBatch, adb_link.DeviceLost) as e:
-                        n += not second; failures += 1
+                        failures += 1
                         gone, halted = isinstance(e, adb_link.DeviceLost), True
                         print(f"  ✗ {e}  {label}")
                         break
-                    n += not second
-                    if err in (GREYED, APP_DENIED) or not err:
-                        failures -= second      # 重试成功：第一遍记下的失败撤销
-                        done += 1
-                    if err in (GREYED, APP_DENIED):
-                        greyed.add((pk, cid))
-                        print(f"  · {'系统锁定（开关是灰的），不能关闭' if err == GREYED else '应用通知已整体关闭，渠道不会弹出'}，不算失败  {label}")
-                        continue
-                    if err:
-                        failures += not second
-                        if not second and err.startswith(RETRY):
+                    if failed(outcome, want):
+                        if not second:
+                            failures += 1
+                        if not second and retryable(outcome):
                             retry.append((pk, cid, label))
-                    print(f"  {'✗ '+err if err else ('开' if want else '关')}  {label}")
+                    else:
+                        failures -= second      # 重试成功：第一遍记下的失败撤销
+                        reached += 1
+                        changed += toggled(outcome)
+                    if exempt_from_recheck(outcome):
+                        exemptions.add((pk, cid))
+                    show(outcome, label, want)
                 if halted:
                     break                       # 锁屏、点错开关、断开：整批停下，不再重试
             if p is not None and not gone:
@@ -695,17 +796,17 @@ def run(a):
                     reader.shell(f"settings put global stay_on_while_plugged_in {stay_on}")
                 except RuntimeError:
                     pass                        # 手机已断开：收尾一步会再改回
-        print(f"拨了 {n} 个，{time.time()-t0:.0f} 秒")
+        print(f"拨了 {changed} 个，{time.time()-t0:.0f} 秒")
         if gone:
             sys.exit(1)                 # 手机已断开：上面已说明原因，不再回读
     else:
-        greyed = set()
+        exemptions = set()
     d, app_off = parse(reader)
     bad = 0
     for pk, cid, label in items:
         st = state(d, app_off, pk, cid)
         protected = protected_channel(d.get((pk, cid), ("", 0, False))[0], cid, label)
-        if st == "ON" and not protected and (pk, cid) not in greyed:
+        if st == "ON" and not protected and (pk, cid) not in exemptions:
             bad += 1
             if cmd == "off":
                 print(f"  仍开着：{label}")       # 以前只给数量，看不出是哪一个（#115）

@@ -157,7 +157,7 @@ class NotificationTests(unittest.TestCase):
         phone_ = Mock(wait_unlocked=Mock(return_value=True), lost=False)
         with patch.object(chan, "load", return_value=items), patch.object(chan, "parse", side_effect=[(on, {}), (after, {})]), \
              patch.object(chan, "Phone", return_value=phone_), patch.object(chan, "keep_awake", return_value=None), \
-             patch.object(chan, "toggle", side_effect=[None, chan.APP_DENIED]), patch.object(chan, "pause_point"), \
+             patch.object(chan, "toggle", side_effect=[chan.Outcome(chan.DONE), chan.Outcome(chan.APP_DENIED)]), patch.object(chan, "pause_point"), \
              patch.object(sys, "argv", ["chan_fast.py", "-s", "t", "off", "x.tsv"]), contextlib.redirect_stdout(io.StringIO()) as out:
             chan.main()                 # 不 sys.exit(1)
         self.assertIn("应用通知已整体关闭", out.getvalue())
