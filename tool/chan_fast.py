@@ -117,10 +117,20 @@ def parse(p, locked=None):
                 app_off[cur] = "importance=NONE" in line
             continue
         m = re.search(r"NotificationChannel\{mId='(.*?)', mName=(.*?), mDescription=.*?mImportance=(-?\d+).*?mDeleted=(\w+)", line)
-        if m and cur and (cur, m.group(1)) not in d:
-            d[(cur, m.group(1))] = (m.group(2), int(m.group(3)), m.group(4) == "true")
-            if locked is not None and fixed and "mBlockableSystem=false" in line:
-                locked.add((cur, m.group(1)))
+        if m and cur:
+            # 同一渠道可能带尾随空格回读两次（#194 纵横读屏）：键统一去掉空格，否则清单行
+            # 查不到状态。两条读数矛盾时取「开着」的那条，宁可多关一次也不漏关；
+            # 已删除的记录不覆盖有效记录。只有重要性 0 是已屏蔽，其余值都按开着算（同 state()）。
+            key = (cur, m.group(1).strip())
+            importance, deleted = int(m.group(3)), m.group(4) == "true"
+            old = d.get(key)
+            if (old is None or (old[2] and not deleted)
+                    or (old[2] == deleted and old[1] == 0 and importance != 0)):
+                d[key] = (m.group(2).strip(), importance, deleted)
+            # 两条读数对「系统锁定」说法不一时按锁定处理：跳过比误关安全，且与回读顺序无关。
+            # 已删除的记录不参与判断，它的锁定信息不可信。
+            if locked is not None and fixed and not deleted and "mBlockableSystem=false" in line:
+                locked.add(key)
     return d, app_off
 
 
@@ -138,17 +148,19 @@ def keep_awake(reader):
 
 
 def load(path):
-    out = []
+    rows = {}
     with open(path, encoding="utf-8-sig") as f:
         for lineno, line in enumerate(f, 1):
             line = line.rstrip("\r\n")
             if line.strip() and not line.lstrip().startswith("#"):
                 # 第四列应用名只给人看：日志里不写应用名，上报的错误日志不含应用列表
-                pk, cid, label = (line.split("\t") + ["", ""])[:3]
+                pk, cid, label = (x.strip() for x in (line.split("\t") + ["", ""])[:3])
                 if not re.fullmatch(r"[\w.]+", pk) or not cid:
                     raise ValueError(f"清单第 {lineno} 行缺少有效包名或渠道 ID")
-                out.append((pk, cid, label or cid))
-    return out
+                # 同一渠道的重复行（含只差空格的写法，#194）合成一行：收尾按渠道计数，不能重复；
+                # 哪一行带应用名就用哪一行的。
+                rows[(pk, cid)] = label or rows.get((pk, cid), "")
+    return [(pk, cid, label or cid) for (pk, cid), label in rows.items()]
 
 
 def state(d, app_off, pk, cid):
