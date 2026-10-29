@@ -22,6 +22,7 @@ import uiautomator2 as u2
 from ui_session import connect
 from troubleshooting import UI_RECOVERY, XIAOMI_INPUT, accessibility_summary, input_blocked
 import adb_link
+import wait
 from row import SWITCH_ROW_DEPTH, bounds, own, title_of
 
 DISMISS = ("以后再说", "暂不更新", "暂不", "取消", "我知道了", "跳过", "禁止", "不再提示", "不同意")
@@ -489,14 +490,11 @@ class Phone:
         for x, y in self.icon_candidates(area)[:tries]:
             focus, sig = self.focus(), self.sig()
             self.click(x, y)
-            end = time.monotonic() + 2.4
-            while True:
-                if any(self.find(e, exact=True) for e in expects):
-                    self.say(f"  · 点开了右上角图标（出现「{expects[0]}」）")
-                    return True
-                if time.monotonic() >= end:     # 页面慢时多等几轮，别把还没画出来的页面 back() 掉
-                    break
-                time.sleep(0.6)
+            # 页面慢时多等几轮，别把还没画出来的页面 back() 掉
+            if wait.until(lambda: any(self.find(e, exact=True) for e in expects),
+                          timeout=2.4, poll=0.6, now=time.monotonic, sleep=time.sleep):
+                self.say(f"  · 点开了右上角图标（出现「{expects[0]}」）")
+                return True
             # 换了页面或弹出浮层：都要回到原页，不能留在别处接着点下一个候选。
             # 退回来也要等页面站稳，否则下一个候选的坐标可能落在跳页动画上。
             if self.focus() != focus or self.sig() != sig:
@@ -518,19 +516,8 @@ class Phone:
 
     def settle(self, before, maxwait=0.8):
         """等新的非空页面稳定；跳页动画中的空树不算已经加载好。"""
-        t0, previous, stable_since = time.time(), None, None
-        while time.time() - t0 < maxwait:
-            time.sleep(0.1)
-            cur = self.sig()
-            if cur and cur != before:
-                if cur != previous:
-                    stable_since = time.time()
-                elif stable_since is not None and time.time() - stable_since >= 0.2:
-                    return True
-            else:
-                stable_since = None
-            previous = cur
-        return False
+        return bool(wait.until(self.sig, maxwait, poll=0.1, stable=0.2,
+                               changed_from=before, now=time.time, sleep=time.sleep))
 
     def back(self, n=1):
         for _ in range(n):
@@ -565,10 +552,9 @@ class Phone:
     def off(self, keep=(), only=None, page="", max_screens=40):
         """当前列表：关掉开着的开关。keep=标题含这些词的不动；only=只关含这些词的。
         每屏第一下单独点、看有没有弹窗/跳页；没有就把这一屏剩下的连着点完，最后统一核对。"""
-        for _ in range(2 if self.miss else 10):  # 页面刚打开还没画完：等开关出现，最多 2 秒（本段已走丢就不等）
-            if self.switches():
-                break
-            time.sleep(0.2)
+        # 页面刚打开还没画完：等开关出现，最多试 10 次（本段已走丢就不等）
+        wait.until(self.switches, tries=2 if self.miss else 10, poll=0.2,
+                   now=time.time, sleep=time.sleep)
         start = self.focus()
         done, slow, checked, kept = 0, False, set(), set()
         for _ in range(max_screens):
@@ -705,24 +691,29 @@ class Phone:
         设置首页刚打开时点搜索框会被忽略（小米 18 Pro Max 实测）：点完要看到输入框才往下走，没打开就再点。"""
         self.miss = 0
         self.d.shell("am start -f 0x10008000 -a android.settings.SETTINGS")
+
+        def box_at():
+            for t, (l, tp, r, b), _ in self.texts():
+                if (box and box in t) or (not box and self.BOX.search(t)):
+                    return ((l + r) // 2, (tp + b) // 2)
+            return None
+
+        def result_at():
+            # 输入框里也有同一段文字；只认非输入框的结果，不能点回搜索框后假报成功。
+            for t, (l, tp, r, b), n in self.texts():
+                if t == (entry or kw) and not EDIT.search(n.get("class", "")):
+                    return ((l + r) // 2, (tp + b) // 2)
+            return None
+
         opened = False
         for _ in range(4):
-            xy, t0 = None, time.time()
-            while time.time() - t0 < 3 and not xy:
-                for t, (l, tp, r, b), _ in self.texts():
-                    if (box and box in t) or (not box and self.BOX.search(t)):
-                        xy = ((l + r) // 2, (tp + b) // 2); break
-                if not xy:
-                    time.sleep(0.15)
+            xy = wait.until(box_at, timeout=3, poll=0.15, now=time.time, sleep=time.sleep)
             if not xy:
                 break
             time.sleep(0.4)                      # 首页还在加载时点击会被吞
             self.click(*xy)
-            t0 = time.time()
-            while time.time() - t0 < 2 and not opened:
-                opened = self.edit_ready()
-                if not opened:
-                    time.sleep(0.15)
+            opened = bool(wait.until(self.edit_ready, timeout=2, poll=0.15,
+                                     now=time.time, sleep=time.sleep))
             if opened:
                 break
         if not opened:
@@ -731,29 +722,21 @@ class Phone:
         if not self.type_text(kw):
             self.say(f"  ✗ 设置搜索框输入「{kw}」失败，跳过")
             return False
-        # 输入框里也有同一段文字；只认非输入框的结果，不能点回搜索框后假报成功。
-        t0, xy = time.time(), None
-        while time.time() - t0 < 3:
-            for t, (l, tp, r, b), n in self.texts():
-                if t == (entry or kw) and not EDIT.search(n.get("class", "")):
-                    xy = ((l + r) // 2, (tp + b) // 2)
-                    break
-            if xy:
-                break
-            time.sleep(0.15)
+        xy = wait.until(result_at, timeout=3, poll=0.15, now=time.time, sleep=time.sleep)
         if not xy:
             self.say(f"  ✗ 没搜到「{entry or kw}」，跳过")
             return False
         before = self.focus()
         self.click(*xy)
-        t0 = time.time()
-        while time.time() - t0 < 3:
-            if self.focus() != before or not self.edit_ready():
-                time.sleep(0.3)
-                return True
-            time.sleep(0.15)
-        self.say(f"  ✗ 搜索结果「{entry or kw}」没有打开，跳过")
-        return False
+
+        def left_search():
+            return self.focus() != before or not self.edit_ready()
+
+        if not wait.until(left_search, timeout=3, poll=0.15, now=time.time, sleep=time.sleep):
+            self.say(f"  ✗ 搜索结果「{entry or kw}」没有打开，跳过")
+            return False
+        time.sleep(0.3)                      # 结果页起来了，给它的内容留一拍
+        return True
 
     def start(self, pkg, activity=None, settle=1.2, foreground=None):
         """拉起 App；之后 settle 秒内冒出来的更新/推荐弹窗顺手点掉。"""
@@ -788,9 +771,9 @@ class Phone:
             current = self.focus().split("/", 1)[0]
             # 权限申请可能在首页已出现后才弹出，也只能拒绝；不在其他 App 上找关闭按钮。
             if current in PERMISSION_CONTROLLERS:
-                until = time.monotonic() + 3
+                give_up_at = time.monotonic() + 3
                 while current in PERMISSION_CONTROLLERS or not current:
-                    if time.monotonic() >= until:
+                    if time.monotonic() >= give_up_at:
                         break
                     if current and not self.dismiss():
                         break
