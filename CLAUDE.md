@@ -52,6 +52,8 @@
 
 `gui/upload_baidu.sh [版本]`：从公开的 GitHub Release 下载安装包并核对 SHA256，经本机已登录的 BaiduPCS-Go 上传，生成分享链接写进 index.html 后提交推送。网盘账号凭证不进仓库和对话。
 
+发完版还有一件事：按 [docs/agents/release-followup.md](docs/agents/release-followup.md) 把 `waiting-for-verify` 的 issue 逐条发给报告者复测。新版不送到报告者手上，这些 issue 永远关不掉。
+
 ## 2026-10-26 用户反馈改进（已随 0.2.4 发布）
 
 - 用户称 0.2.3 仍失败，同时关闭 GKD、自动记账后可执行。只视作冲突排查线索，单一工具或模式尚未验证；取消“无需关闭无障碍服务”的绝对提示。错误时限时只读检查总开关 / 服务数量，不写服务名单到诊断，不自动停用无障碍。
@@ -93,7 +95,11 @@ GitHub Issues（`gh` CLI）。见 `docs/agents/issue-tracker.md`。
 
 ### Triage labels
 
-默认五个角色标签，标签名即角色名。见 `docs/agents/triage-labels.md`。
+默认五个角色标签，标签名即角色名，另加本仓库的 `waiting-for-verify`（已修、等真机复测）。见 `docs/agents/triage-labels.md`。
+
+### Release followup
+
+发版后要催哪些复测、报告者确认前不关闭哪些 issue，见 `docs/agents/release-followup.md`。每次发版都要过一遍这张清单。
 
 ### Domain docs
 
