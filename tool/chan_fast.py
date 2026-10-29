@@ -436,7 +436,9 @@ def notifications_denied(p, pk):
     """安卓 13 起应用通知总开关是 POST_NOTIFICATIONS 权限。有的系统 dumpsys notification 看不出来：
     渠道页的开关显示「关」，渠道记录仍是「开」（三星 9 个、vivo 2 个，错误日志 10-29；华为 #241 同样现象）。"""
     try:
-        out = p.d.shell(f"dumpsys package {shlex.quote(pk)} | grep -m3 'POST_NOTIFICATIONS: granted='").output
+        # 不加 grep -m：提前退出会让 dumpsys 收到 SIGPIPE，u2 判「shell output invalid」（#205）
+        out = p.d.shell(f"dumpsys package {shlex.quote(pk)} | grep 'POST_NOTIFICATIONS: granted='"
+                        " | sed -n '1,3p'").output
     except Exception:
         return False
     return isinstance(out, str) and "POST_NOTIFICATIONS: granted=false" in out and "POST_NOTIFICATIONS: granted=true" not in out
