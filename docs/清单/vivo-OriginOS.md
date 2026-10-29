@@ -5,7 +5,7 @@
 - vivo X300 Ultra（V2547DA，OriginOS 6，Android 16），2026-10-22。
 - vivo X300 Ultra（V2547A，OriginOS 7，Android 17），2026-10-25。
 
-iQOO 结构相近。当前源码有 `recipes/vivo-V2547DA/` 和 `recipes/vivo-V2547A/` 两份机型脚本：V2547DA 整段自动执行仍待真机验证；V2547A 已真机整段跑通（重跑 126 秒）。两者系统版本不同，入口差异见下文「OriginOS 7（Android 17）的不同之处」，版本对不上时引擎会走安全模式。发布与验证范围见[更新记录](../../CHANGELOG.md)。
+iQOO 结构相近。当前源码有 `recipes/vivo-V2547DA/` 和 `recipes/vivo-V2547A/` 两份机型脚本：两者均已真机整段跑通验证（V2547DA 124 秒，V2547A 126 秒）。两者系统版本不同，入口差异见下文「OriginOS 7（Android 17）的不同之处」，版本对不上时引擎会走安全模式。发布与验证范围见[更新记录](../../CHANGELOG.md)。
 符号：🔴 关掉　🟢 保留　⚠️ 注意
 
 ---

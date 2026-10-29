@@ -204,7 +204,8 @@ class Phone:
             if r - l <= 0 or b - t <= 0 or not self.on_screen(n):
                 continue
             cy = (t + b) // 2
-            states = ("开", "关", "已开启", "已关闭", "开启", "关闭", "ON", "OFF")
+            states = ("开", "关", "已开启", "已关闭", "开启", "关闭", "ON", "OFF",
+                      "开启，开关", "关闭，开关", "已开启，开关", "已关闭，开关", "开启，按钮", "关闭，按钮")
             label = (n.get("text") or n.get("content-desc") or "").strip().split("\n", 1)[0]
             label = label if label not in states else ""
             title, p = "", n
