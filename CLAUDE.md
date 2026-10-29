@@ -2,6 +2,11 @@
 
 本仓库的操作规范写在 [AGENTS.md](AGENTS.md)。开工前读完它。
 
+## 开发
+
+- 回归：`python -m unittest discover -s tests`；本机用仓库根的 `.venv/bin/python`（系统 python 缺 adbutils，会报一串 ModuleNotFoundError）。只装 `requirements.txt` 就够，不需要 pywebview / pillow。
+- CI：`.github/workflows/test.yml` 在 PR 和 main 推送时自动跑同一套；`build-windows.yml` 只在 `v*` 标签或手动触发时打包，不守 PR。
+
 ## 2026-10-29 一夜的上报、GitHub 新 Issue、合并 8 个 PR（0.2.7）
 
 - 0.2.6 一夜 68 份上报多数已由下节修掉；新问题与处理见 CHANGELOG「10-29」。原始导出在 `.private/reports/`、`.private/github/`。
