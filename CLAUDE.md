@@ -39,7 +39,7 @@
 
 ## 2026-10-27 社区批量反馈（0.2.4，已发布）
 
-- 137 个打开的 Issue 按日志归类，逐条去向见 [docs/09](docs/09-社区问题处理.md) 首节。原始 Issue 导出和 GBK 乱码还原不进仓库。
+- 137 个打开的 Issue 按日志归成 8 类，处理范围见 [docs/09](docs/09-社区问题处理.md) 的「批次记录 · 2026-10-27」，逐条状态见 issue。原始 Issue 导出和 GBK 乱码还原不进仓库。
 - 营销通知：ColorOS `com.oplus.notificationmanager`、荣耀 / 华为系统管家渠道页、三星 `entity_header_title`、Android 16 内联渠道行；回读只取 user 0；缩略 ID 与系统锁定渠道不进扫描结果；点击后同 App 其他渠道或总开关变化 → 原位点回并停止整批（`StopBatch`）。「未确认」日志附包名 / Activity。
 - 小米「USB 调试（安全设置）」：`input keyevent 0` 返回 `INJECT_EVENTS` 即判定被拒，检测页阻止下一步，引擎点击时同样报错。锁屏只认 `isKeyguardShowing=true`。
 - adb 掉线：`tool/adb_link.py`，等 `wait-for-device` 15 秒重试一次，仍断开就退出本步骤；不再把空输出当成功。营销通知一步也设插电常亮。客户端拒用低于 1.0.41 的 adb；Windows 等不到手机时只读查询设备管理器。
@@ -47,7 +47,7 @@
 - Mac Intel：旧 `gui/.venv-x86` 用了 Homebrew Python（minos 26.0），已改名 `gui/.venv-x86-brew-old`；`build_mac.sh` 只用 uv managed Python，并扫描包内文件最低系统版本，高于 11 即失败。
 - 真机（无线调试）：一台 ColorOS 17 与荣耀 MagicOS 10 通知渠道来回测试通过，测试后回读一致。真机发现并修复：列表卡片里的 ✕ 不点、「不同意」算拒绝按钮、`AutoCompleteTextView` 搜索框。
 - vivo OriginOS 6：总页与渠道页同 Activity，靠顶栏标题区分，App 名在总页找到渠道行的同一次读屏里记录。
-- 162 项回归通过；Android 15 模拟器 scan / off / on 通过。三星、华为、荣耀内联布局与旧版仍无真机，以 docs/09 的「待复测」为准。
+- 162 项回归通过；Android 15 模拟器 scan / off / on 通过。三星、华为、荣耀内联布局与旧版仍无真机，以 docs/09 的「待真机确认」为准。
 
 ## 错误日志上报（客户端待发 0.2.5）
 
