@@ -639,5 +639,48 @@ class DesktopTests(unittest.TestCase):
         self.assertEqual(fake.start.call_args.kwargs["gui"], "edgechromium")
 
 
+class RepeatedChannelNameTests(unittest.TestCase):
+    """#287：华为 HarmonyOS 4 的应用通知页把分组名写在列表里，和渠道名同名。
+    inline_switch 以前看到两处同名就放弃，其实只有一处带开关。"""
+
+    APP = "com.android.settings/.Settings$AppNotificationSettingsActivity"
+
+    PAGE = '''<hierarchy><node class="android.widget.FrameLayout" bounds="[0,0][1080,2340]">
+      <node text="淘宝" bounds="[60,100][600,200]"/>
+      <node class="androidx.recyclerview.widget.RecyclerView" scrollable="true" bounds="[0,300][1080,2200]">
+        <node class="android.widget.LinearLayout" bounds="[40,700][1040,840]">
+          <node text="营销通知" bounds="[80,720][500,800]"/>
+          <node text="3 个渠道" bounds="[80,810][500,840]"/>
+        </node>
+        <node class="android.widget.LinearLayout" bounds="[40,880][1040,1080]">
+          <node class="android.widget.LinearLayout" bounds="[80,900][800,1060]">
+            <node text="营销通知" bounds="[80,920][500,980]"/>
+          </node>
+          <node class="com.huawei.uikit.hwswitch.widget.HwSwitch" checkable="true" checked="true" bounds="[900,940][1000,1020]"/>
+        </node>
+      </node>
+    </node></hierarchy>'''
+
+    def phone(self, page):
+        p = fast.Phone.__new__(fast.Phone)
+        p.W, p.H, p.log, p.sysui = 1080, 2340, False, False
+        p.d = Mock()
+        p.focus = Mock(return_value=self.APP)
+        p.tree = Mock(return_value=ET.fromstring(page))
+        return p
+
+    def test_group_row_without_switch_does_not_block_the_channel_row(self):
+        self.assertEqual(chan.inline_switch(self.phone(self.PAGE), "营销通知"), ("营销通知", True, (950, 980)))
+
+    def test_two_rows_that_both_have_switches_are_still_refused(self):
+        # 两个都合格时无从判断哪个是渠道行，只能放弃，不能猜
+        page = self.PAGE.replace('<node text="3 个渠道" bounds="[80,810][500,840]"/>',
+                                 '<node class="android.widget.Switch" checkable="true" checked="true"'
+                                 ' bounds="[900,730][1000,810]"/>')
+        p = self.phone(page)
+        self.assertIsNone(chan.inline_switch(p, "营销通知"))
+        self.assertIn("同名 2 行", p.why)
+
+
 if __name__ == "__main__":
     unittest.main()
