@@ -1,0 +1,187 @@
+"""纯重构要「改前改后对拍」时用的现成材料：页面样本、假时钟、按时间轴换页的假设备、假 Phone。
+
+CODING_STANDARDS.md 要求纯重构给出对拍证据，页面样本取 tests/ 里所有 <hierarchy>、至少两种屏尺寸。
+以前每做一次同类重构都要现场把这四样东西重搭一遍，现在 import 一下就有：
+
+    from fixtures import EMPTY_PAGE, SIZES, all_pages, drive
+    for label, xml in all_pages():
+        for size in SIZES:
+            print(label, size, drive(lambda p: p.settle("", 1.0), size=size,
+                                     stages=[(0.0, EMPTY_PAGE), (0.2, xml)]))
+
+写新测试不要用它 —— 测试要照实现之外的事实断言，夹具是为了让两份实现吃同一份输入。
+"""
+import re
+import sys
+import xml.etree.ElementTree as ET
+from pathlib import Path
+from types import SimpleNamespace
+
+TESTS_DIR = Path(__file__).resolve().parent
+ROOT = TESTS_DIR.parent
+
+# 两种屏尺寸：竖屏主流宽度差一半，行分带与可视区域判定都要在这两种下各跑一遍
+SIZES = ((1080, 2340), (720, 1600))
+
+# 跳页动画里读到的空树：不是「页面已经画好」
+EMPTY_PAGE = '<hierarchy rotation="0"></hierarchy>'
+
+_HIERARCHY = re.compile(r"<hierarchy\b.*?</hierarchy>", re.S)
+
+
+def load_tool():
+    """把 tool/ 加进 sys.path（与各 test 文件里的写法等价）。"""
+    tool = str(ROOT / "tool")
+    if tool not in sys.path:
+        sys.path.insert(0, tool)
+
+
+def all_pages(folder=None):
+    """tests/ 里所有能解析的 <hierarchy> 字面量：[(来源标签, xml)]。
+
+    直接从测试源码里抽，不另存一份副本 —— 测试改了样本，这里跟着变。
+    有一份是故意造的非良构 XML（错误上报里要复现解析失败），跳过。
+    """
+    pages = []
+    for path in sorted(Path(folder or TESTS_DIR).glob("test_*.py")):
+        src = path.read_text(encoding="utf-8")
+        for i, found in enumerate(_HIERARCHY.finditer(src)):
+            try:
+                ET.fromstring(found.group(0))
+            except ET.ParseError:
+                continue
+            pages.append((f"{path.name}:{i}", found.group(0)))
+    return pages
+
+
+class Clock:
+    """until() 与 Phone 共用的假时钟：sleep 推进时间，读屏与点击自己也可以花时间。
+
+    装进模块用 install_clock()：fast / chan_fast 里的 time.time / time.sleep 换成它，
+    等待就按假时间走，测试不必真睡。
+    """
+
+    def __init__(self, read_cost=0.0, click_cost=0.05):
+        self.t = 0.0
+        self.read_cost = read_cost
+        self.click_cost = click_cost
+        self.page_reads = 0
+        self.clicks = 0
+
+    def time(self):
+        return self.t
+
+    monotonic = time
+
+    def sleep(self, seconds):
+        self.t += seconds
+
+    def read(self):
+        """读一次屏：按 read_cost 花时间，慢机型的读屏开销就加在这里。"""
+        self.page_reads += 1
+        self.t += self.read_cost
+
+    def click(self):
+        self.clicks += 1
+        self.t += self.click_cost
+
+
+def install_clock(module, clock):
+    """把这个时钟装进 fast / chan_fast：两个模块各自 import 了 time，要分别换。"""
+    module.time = clock
+    return clock
+
+
+class Timeline:
+    """按时间轴换页：stages = [(起始秒, 页面 xml)]，到达起始秒就切到那一页。
+
+    时间只由假时钟推进，跟谁在轮询无关 —— 同一份时间轴喂给旧实现和新实现，才叫对拍。
+    focus 是同形状的焦点窗口轴（包名/Activity），用来区分「页面变了」和「换了 App」。
+    """
+
+    def __init__(self, stages, focus=((0.0, ""),)):
+        stages = list(stages)
+        if not stages:
+            raise ValueError("Timeline 需要至少一页")
+        self.stages = stages
+        self.focus_stages = list(focus)
+
+    @staticmethod
+    def _at(axis, t):
+        value = axis[0][1]
+        for start, candidate in axis:
+            if t >= start:
+                value = candidate
+        return value
+
+    def page_at(self, t):
+        return self._at(self.stages, t)
+
+    def focus_at(self, t):
+        return self._at(self.focus_stages, t)
+
+
+class Device:
+    """uiautomator2 连接的替身：只实现 Phone 真正会调到的那三个方法。"""
+
+    def __init__(self, timeline, size, clock):
+        self.timeline, self.size, self.clock = timeline, size, clock
+
+    def dump_hierarchy(self):
+        self.clock.read()
+        return self.timeline.page_at(self.clock.t)
+
+    def window_size(self):
+        return self.size
+
+    def shell(self, cmd, timeout=60):
+        return SimpleNamespace(output="", exit_code=0)
+
+
+def fake_phone(clock=None, size=SIZES[0], stages=((0.0, EMPTY_PAGE),),
+               focus=((0.0, ""),), fast_mod=None, **fields):
+    """造一个不连手机的 Phone：读屏走时间轴，点击 / 返回只推进假时钟。
+
+    只替掉会碰手机的部分；tree / sig / settle 等仍是真的，走 Device.dump_hierarchy。
+    要换掉别的属性（想断言点击的坐标、想固定 locked）用关键字传进来，形如
+    fake_phone(locked=lambda: True)。
+    """
+    if fast_mod is None:
+        load_tool()
+        import fast as fast_mod
+    clock = clock or Clock()
+    timeline = Timeline(stages, focus)
+    p = fast_mod.Phone.__new__(fast_mod.Phone)
+    p.serial, p.lost = "fake", False
+    p.W, p.H = size
+    p.d = Device(timeline, size, clock)
+    p.log, p.miss, p.changed = False, 0, []
+    p.why, p.stage = "", ""
+    p.vivo_seen, p.vivo_app, p.sysui = False, None, False
+    p.focus = lambda: timeline.focus_at(clock.t)
+    p.click = lambda *a, **k: clock.click()
+    p.back = lambda *a, **k: clock.click()
+    p.say = lambda *a, **k: None
+    p.dismiss = lambda *a, **k: None
+    p.type_text = lambda text, *a, **k: (clock.click(), True)[1]
+    p.scroll = lambda *a, **k: None
+    p.scroll_more = lambda *a, **k: False
+    p.locked = lambda *a, **k: False
+    p.wait_unlocked = lambda *a, **k: True
+    for name, value in fields.items():
+        setattr(p, name, value)
+    return p
+
+
+def drive(call, modules=(), size=SIZES[0], stages=((0.0, EMPTY_PAGE),),
+          focus=((0.0, ""),), read_cost=0.0, **fields):
+    """跑一次并回报代价：造钟 → 装进给定模块 → 造假设备 → call(phone) → (结果, 耗时, 读屏次数, 点击次数)。
+
+    对拍时左右两边各调一次，比较这四项里哪些变了；read_cost 用来看慢机型下的差异。
+    """
+    clock = Clock(read_cost=read_cost)
+    for module in modules:
+        install_clock(module, clock)
+    p = fake_phone(clock=clock, size=size, stages=stages, focus=focus, **fields)
+    out = call(p)
+    return out, round(clock.t, 2), clock.page_reads, clock.clicks
