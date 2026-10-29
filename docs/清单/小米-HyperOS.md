@@ -8,6 +8,7 @@
 | Xiaomi 18 Pro Max（M154FF） | HyperOS OS4.0.24，Android 17 | 2026-10-22 实测；2026-10-25 九段脚本重跑通过 |
 | Xiaomi 18 Fold（2608BPX34C） | CP2A.260605.016，Android 17 | 2026-10-24 社区实测（[Issue #2](https://github.com/rddmwmddr/android-ad-cleaner/issues/2)） |
 | Xiaomi 17 Ultra（2512BPNDAC，标准版） | HyperOS OS4.0.5.0.XPACNXM，Android 17 | 2026-10-28 真机实测；专用脚本九段全通过（176 秒，`recipes/xiaomi-2512BPNDAC`） |
+| Xiaomi 15（24129PN74C） | HyperOS OS4.0.0.22.XOCCNXM，Android 17 | 2026-10-29 真机实测；专用脚本九段全通过（189 秒，`recipes/xiaomi-24129PN74C`） |
 | Xiaomi Pad 7（2410CRP4CC） | HyperOS OS2.0.208.0.VOZCNXM，Android 15 | 2026-10-28 实测；四段脚本复跑通过，约 61 秒 |
 | REDMI K80 至尊版（25060RK16C） | HyperOS 2（BP2A.250605.031.A3），Android 16 | 2026-10-27 真机实测；专用脚本九段全通过并回读（recipes/redmi-25060RK16C） |
 | REDMI K90 Pro Max（25102RKBEC） | HyperOS OS4.0.2.0.XPMCNXM，Android 17 | 2026-10-27 实测，九段机型脚本全通过（169 秒） |
@@ -16,6 +17,16 @@
 | Xiaomi 13 Ultra（2304FPN6DC） | HyperOS OS3.0.308.0.WMACNXM，Android 16 | 2026-10-28 实测；九段脚本复跑通过，约 3 分 16 秒 |
 
 **Xiaomi 17 Ultra（2512BPNDAC）与 18 Pro Max / 18 Fold 的三处差异**：系统底包和它们相同（CP2A.260605.016），这台是**标准版，不是徕卡版**。① 「系统工具广告」是独立页面，要**在设置首页搜索「系统广告」**才能进，「隐私与安全 → 更多安全设置 → 广告服务」那条路径上只有「个性化广告推荐」；② 浏览器工具栏最右的「设置」按钮点进去是「页面布局」子页，主设置要走 底部「菜单」→ 弹窗右上角齿轮，「隐私和安全」在主设置页最底部（第 13 项之后，要滚）；③ 日历「用户体验计划」在设置页倒数第二项，右上「更多」对 uiautomator 的点击不响应，只能 `adb shell input tap`。机型脚本 `recipes/xiaomi-2512BPNDAC/` 已按这三点写。
+
+**Xiaomi 15（24129PN74C）与 17 Ultra 的三处差异**：系统底包同为 CP2A.260605.016（OS4.0 系列），拿 18 Pro Max 当参考脚本时九段里四段失败（[Issue #193](https://github.com/rddmwmddr/android-ad-cleaner/issues/193)），原因如下。
+
+① **系统广告**：设置首页的「隐私与安全」在第二屏，进去只有「隐私 / 安全」两个分栏、默认停在「隐私」；切到「安全」后「更多安全设置」在这一页最末尾（要滑三次），而这一层里**没有**广告服务入口，只有用户体验改进计划等项目。广告服务是 `com.android.settings` 的独立页面 `com.android.settings.ad.AdServiceSettings`，直接 `am start` 拉起最快，也不受设置首页滚动位置影响。
+
+② **应用商店**：底部标签的无障碍名是「我的，有新消息」，精确匹配「我的」返回空，参考脚本的 `p.go("我的", "设置")` 因此卡在第一步，后面四个入口全部走空。更麻烦的是「我的」页有一条「去功能设置里重新开启」，文字含「设置」且可点，通用的齿轮查找会先命中它、点开手机清理的功能页；真正要点的右上角齿轮文字就是「设置」本身，位置在屏幕右上（y < 屏高 25%、x > 屏宽 70%）。另外冷启动首页要几秒才渲染出底栏，点早了会扑空。
+
+③ **浏览器**：工具栏最右的「设置」图标点进去是**首页编辑面板**（页面布局 / 快捷网址 / 全网热榜），不是设置。主设置要走 底部「菜单」→ 弹窗里同名那一行（头像 / 菜单编辑 / 分享 / 设置），「隐私和安全」在主设置页最底部要滚一段。底栏按钮是 ViewGroup，只认 80 毫秒短按，`input tap` 点了没反应。
+
+主题段与参考脚本一致：桌面入口在 `com.miui.themestore`，打开后转到 `com.android.thememanager`，这个跳转是正常的，不是被别的 App 顶掉。机型脚本 `recipes/xiaomi-24129PN74C/` 已按上面三点写，九段实测重跑 189 秒。
 
 **K90 Pro Max 与上面两台的两处差异**：① 设置首页一屏放不下，「隐私与安全」在第二屏，要往下滑一段才看得到；②「隐私与安全」打开的是安全中心的 `PrivacySafetyActivity`，只有「隐私 / 安全」两个分栏、默认停在「隐私」，得先切到「安全」分栏，「更多安全设置」在这一页的最末尾。机型脚本 `recipes/xiaomi-25102RKBEC/` 已按这两点写。
 
