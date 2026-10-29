@@ -398,7 +398,8 @@ class Phone:
             key = (n.get("content-desc") or "") + " " + (n.get("resource-id") or "")
             if self.CLOSE.search(key) and not (n.get("text") or "").strip() and not in_list(n):
                 l, t, r, b = bounds(n)
-                if 0 < r - l < self.W * 0.3 and 0 < b - t < self.H * 0.12:   # 小图标，不是整行
+                # 只点屏幕内的图标：屏幕外还留着上一层的节点，点它会抛「点击坐标在屏幕外」把整段打断
+                if 0 < r - l < self.W * 0.3 and 0 < b - t < self.H * 0.12 and self.on_screen(n):
                     self.click((l + r) // 2, (t + b) // 2); time.sleep(0.6)
                     self.say(f"  · 弹窗点了 ✕（{key.strip()[:40]}）")
                     return "✕"
@@ -495,24 +496,25 @@ class Phone:
     def confirm(self):
         """开关后弹确认框就点确认类按钮。只认真按钮（Button 类），
         ColorOS 开关旁边的「开启/关闭」状态文字不算——点了会把开关又拨回去。
-
-        按钮文字不一定在 text 上：vivo 阅图锁屏的确认框是 android.widget.Button，
-        text 为空、文字写在 content-desc（Issue #246）。只在 text 为空时回退到
-        content-desc，并且仍然要求 Button 类、整段等于确认词，避免点到说明文字。
-        """
+        按钮文字不一定在 text 上：vivo 阅图锁屏的 Button text 为空、文字在 content-desc（#246 / PR #249）；
+        vivo / iQOO 另一种弹窗把文字放在 Button 下级的 TextView（vbutton_title，PR #239）。
+        都要整段等于确认词，避免点到说明文字。
+        屏幕外的节点跳过：页面里常留着上一层对话框的按钮，点它会抛「点击坐标在屏幕外」把整段打断（PR #248）。"""
         time.sleep(0.2)
         root = self.tree()
         for c in CONFIRM:
             for n in root.iter("node"):
-                label = (n.get("text") or "").strip()
-                if not label:
-                    label = (n.get("content-desc") or "").strip()
-                if label == c and "Button" in (n.get("class") or ""):
-                    l, t, r, b = bounds(n)
-                    if r > l and b > t:
-                        self.click((l + r) // 2, (t + b) // 2)
-                        time.sleep(0.3)
-                        return c
+                if "Button" not in (n.get("class") or ""):
+                    continue
+                label = (n.get("text") or "").strip() or (n.get("content-desc") or "").strip()
+                inner = {(x.get("text") or "").strip() for x in n.iter("node") if x is not n}
+                if label != c and not (not label and c in inner):
+                    continue
+                l, t, r, b = bounds(n)
+                if r > l and b > t and self.on_screen(n):
+                    self.click((l + r) // 2, (t + b) // 2)
+                    time.sleep(0.3)
+                    return c
         return None
 
     def off(self, keep=(), only=None, page="", max_screens=40):
