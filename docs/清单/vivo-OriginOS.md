@@ -202,3 +202,20 @@ Failure [only root can delete system app for a particular user]
 | `dumpsys notification` 的渠道状态和手机页面不一致 | vivo 开关存在自家通知服务里，以手机页面为准 |
 | `pm suspend` / `disable-user` / `uninstall --user 0` 全报 SecurityException | 要 root。快应用用 `quickapp off`（改 `switch_quick_app_service`） |
 | 备份里 `disabled.txt` 第一行是 `Error: Shell does not have permission to access user 666` | `pm list packages` 不带 `--user 0` 会遍历分身/隐私空间；工具已改成带 `--user 0` |
+
+## V2417A（OriginOS 6 / Android 16）差异
+
+2026-10-30 在 `PD2417D_A_16.2.14.1.W10` 真机逐页实测，专用脚本为 `recipes/vivo-V2417A/recipe.py`。应用版本、验证范围及执行记录见[适配说明](../../recipes/vivo-V2417A/README.md)。
+
+| 位置 | 本机路径或差异 |
+|---|---|
+| 系统广告与隐私 | `com.android.settings/.Settings$AdAndPrivacyActivityForOsTwo` 可直接启动；shell 中须引用 `$`，用 `settle=0` 避免消弹窗误点“关闭后”说明。设置首页悬浮搜索框可能遮住翻页后首行，脚本避开该入口 |
+| 全局搜索 | `.view.SearchSettingsActivity` 可直接启动；“推荐热搜榜单”在“首页展示内容”里，不是全局搜索设置的第一层 |
+| 阅图锁屏 | `.ui.MagazineSettings` 可直接启动；只处理“阅图锁屏”“锁屏横滑进入阅图” |
+| 应用商店 | 设置页未导出；冷启动可能出现“月度精品”，点“进入首页”后走“我的 → 设置 → 关于” |
+| 商店个性化 | 两个开关标题附带“开启/关闭”状态字，关闭需确认；按稳定标题回读，不把状态文字当按钮 |
+| 商店服务管理 | 七项推广中的悬浮项叫“悬浮球”；“我的页-我的服务”和“空间清理”保留 |
+| 浏览器 | “菜单 → 设置”；设置页未导出；极简首页另有关“首页上滑展示资讯”，更多设置底部还有下载页热门应用/热榜开关 |
+| 手机管家、天气 | `.MainSettings`、`.WeatherSettings` 可直接启动；天气只关说明为“热点资讯通知”的“天气服务” |
+| 负一屏 | 设置页未导出，从桌面第一页右滑进入，HOME 也可能恢复已打开的负一屏；服务推荐、资讯推荐、内容精选、热点资讯可单独处理，便捷生活与小V建议保留 |
+| 通知、快应用 | 通用通知流程已安全关闭 5 个明确营销渠道；快应用可用系统服务开关关闭并回读，均不写入机型脚本自动执行 |
