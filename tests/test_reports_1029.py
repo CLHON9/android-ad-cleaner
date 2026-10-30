@@ -250,5 +250,56 @@ class GuiTests(unittest.TestCase):
         self.assertIn(str(ROOT / "gui/web/chime.wav"), [src for src, _ in bundle.bundle_data(ROOT)])
 
 
+
+class VivoSlowTransitionTests(unittest.TestCase):
+    """0.2.7 的 vivo 报告里 212 次「点这一行后页面没变；标题顶部」：转场慢，settle 等不到，其实渠道页已经打开。"""
+    APP = """<hierarchy><node package="com.vivo.systemuiplugin" bounds="[0,0][1080,2340]">
+      <node resource-id="com.vivo.systemuiplugin:id/originui_vtoolbar_normal_title" text="淘宝" bounds="[100,120][600,200]"/>
+      <node clickable="true" bounds="[0,500][1080,610]">
+        <node text="允许通知" bounds="[60,520][600,590]"/>
+        <node class="android.widget.Switch" checkable="true" checked="true" bounds="[900,520][1000,590]"/>
+      </node>
+      <node class="androidx.recyclerview.widget.RecyclerView" scrollable="true" bounds="[0,700][1080,2200]">
+        <node clickable="true" bounds="[0,1100][1080,1210]">
+          <node text="营销通知" bounds="[60,1120][600,1190]"/>
+          <node class="android.widget.CheckBox" checkable="true" checked="true" bounds="[900,1120][1000,1190]"/>
+        </node>
+      </node>
+    </node></hierarchy>"""
+    CHANNEL = """<hierarchy><node package="com.vivo.systemuiplugin" bounds="[0,0][1080,2340]">
+      <node resource-id="com.vivo.systemuiplugin:id/originui_vtoolbar_normal_title" text="营销通知" bounds="[100,120][600,200]"/>
+      <node clickable="true" bounds="[0,900][1080,1010]">
+        <node text="允许通知" bounds="[60,920][600,990]"/>
+        <node class="android.widget.Switch" checkable="true" checked="true" bounds="[900,920][1000,990]"/>
+      </node>
+    </node></hierarchy>"""
+
+    def phone(self, pages, settled):
+        p = fast.Phone.__new__(fast.Phone)
+        p.W, p.H, p.log, p.miss = 1080, 2340, False, 0
+        p.d = Mock()
+        p.locked = Mock(return_value=False)
+        p.focus = Mock(return_value="com.vivo.systemuiplugin/com.vivo.systemui.statusbar.notification.settings.channels.NotificationSettingsActivity")
+        p.click, p.confirm, p.sig = Mock(), Mock(), Mock(return_value="")
+        p.settle = Mock(return_value=settled)
+        p.scroll_more = Mock(return_value=False)
+        queue = [ET.fromstring(x) for x in pages]
+        p.tree = Mock(side_effect=lambda: queue.pop(0) if len(queue) > 1 else queue[0])
+        return p
+
+    def test_channel_page_after_slow_transition_is_used(self):
+        p = self.phone([self.APP, self.CHANNEL], settled=False)
+        with patch.object(chan.time, "sleep"):
+            sw = chan.via_app_page(p, "com.taobao.taobao", "营销通知")
+        self.assertEqual(sw[2], (950, 955))
+        self.assertEqual(p.vivo_app, "淘宝")
+
+    def test_still_on_app_page_is_still_a_skip(self):
+        p = self.phone([self.APP], settled=False)
+        with patch.object(chan.time, "sleep"):
+            self.assertIsNone(chan.via_app_page(p, "com.taobao.taobao", "营销通知"))
+        self.assertEqual(p.stage, "点这一行后页面没变")
+
+
 if __name__ == "__main__":
     unittest.main()

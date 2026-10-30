@@ -476,7 +476,10 @@ def via_app_page(p, pk, name):
             p.click((l + r) // 2, (t + btm) // 2)
             if not p.settle(before):
                 p.stage = "点这一行后页面没变"
-                return None
+                # vivo 进渠道页的转场慢，settle 等不到变化不代表没进去：照常认页，认不出才算没变。
+                # 错误日志 10-30：0.2.7 的 vivo 报告里 212 次「点这一行后页面没变；标题顶部」——跳过时渠道页已经打开。
+                # 只放宽 vivo：它的认页要求顶栏是渠道名、且不同于刚记下的 App 名，不会把总页的「允许通知」当成渠道开关
+                return wait_page(p, name) if vivo else None
             p.stage = "点进去后没认出渠道页"
             return wait_page(p, name)
         if not p.scroll_more():
