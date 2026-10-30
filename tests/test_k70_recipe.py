@@ -83,5 +83,31 @@ class K70RecipeTests(unittest.TestCase):
         self.assertEqual(scope["VERIFIED_SWITCHES"], 0)
 
 
+class K70ProRecipeTests(unittest.TestCase):
+    def run_store(self, switches):
+        phone = Mock()
+        phone.locked.return_value = False
+        phone.tap.return_value = True
+        phone.switches.return_value = switches
+        phone.scroll_more.return_value = False
+        scope = {"p": phone, "ONLY": ["应用商店"]}
+        path = ROOT / "recipes/redmi-23117RK66C/recipe.py"
+        with contextlib.redirect_stdout(io.StringIO()):
+            exec(compile(path.read_text(encoding="utf-8"), str(path), "exec"), scope)
+        return phone, scope
+
+    def test_store_missing_target_aborts_before_toggling_other_settings(self):
+        phone, scope = self.run_store([("应用更新通知", True, (1, 2))])
+        phone.off.assert_not_called()
+        self.assertEqual(scope["FAILED_STEPS"], ["应用商店"])
+        self.assertEqual(scope["VERIFIED_SWITCHES"], 0)
+
+    def test_store_target_that_stays_on_is_not_reported_as_verified(self):
+        phone, scope = self.run_store([("个性化服务", True, (1, 2))])
+        phone.off.assert_called_once()
+        self.assertEqual(scope["FAILED_STEPS"], ["应用商店"])
+        self.assertEqual(scope["VERIFIED_SWITCHES"], 0)
+
+
 if __name__ == "__main__":
     unittest.main()
