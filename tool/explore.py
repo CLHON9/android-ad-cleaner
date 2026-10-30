@@ -19,15 +19,15 @@ ME = ("我的", "我", "个人中心", "更多")
 SET = ("设置", "设置中心")
 
 
-def entries(p):
-    """当前页可点的文字条目（不带开关的行），作为子页候选。"""
+def entries(p, pkg):
+    """当前页可点的文字条目（不带开关的行），作为子页候选。pkg=这一页属于哪个 App。"""
     sw_rows = {xy[1] // 60 for _, _, xy in p.switches()}
     out = []
     for t, (l, tp, r, b), n in p.texts():
         cy = (tp + b) // 2
         if len(t) > 12 or len(t) < 2 or cy < p.H * 0.1 or ENTRY_SKIP.search(t) or cy // 60 in sw_rows:
             continue
-        if n.get("package") != p.pkg_now or l > p.W * 0.5:     # 别的窗口的字、右侧的取值文字（默认/百度/已防护）
+        if n.get("package") != pkg or l > p.W * 0.5:     # 别的窗口的字、右侧的取值文字（默认/百度/已防护）
             continue
         if re.fullmatch(r"[\d.%:：/ ]+|已开启|已关闭|开启|关闭|未开启", t):
             continue
@@ -66,9 +66,8 @@ def explore(p, pkg, rows):
     if err:
         print("  " + err); rows.append((pkg, "", f"（{err}）", "", "")); return
     home = p.focus()
-    p.pkg_now = home.split("/")[0]
     read_page(p, ["设置"], rows, pkg)
-    todo = entries(p)[:25]
+    todo = entries(p, home.split("/")[0])[:25]      # 只收前台这个 App 的文字，浮窗与状态栏不算
     done = set()
     for e in todo:
         if e in done:

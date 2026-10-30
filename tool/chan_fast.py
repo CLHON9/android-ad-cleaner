@@ -286,14 +286,14 @@ def notification_focus(p):
     package, _, activity = focus.partition("/")
     if activity.startswith("."):
         activity = package + activity
-    p.sysui = False
+    p.systemui_text = False
     if package in NOTIFY_HOSTS:
         return focus if NOTIFY_HOSTS[package].match(activity) else ""
     if package in VIVO_HOSTS:
         if not activity.endswith(VIVO_ACTIVITY):
             return ""
         p.vivo_seen = True
-        p.sysui = package == "com.android.systemui"   # texts() 默认不读 systemui 的文字（那是状态栏）
+        p.systemui_text = package == "com.android.systemui"   # texts() 默认不读 systemui 的文字（那是状态栏）
         return focus
     return focus if "settings" in package.lower() and ("notification" in activity.lower() or "SubSettings" in activity) else ""
 
@@ -326,7 +326,15 @@ def allow_switches(p, root):
     return found
 
 
-def channel_switch(p, name):
+@dataclass
+class Attempt:
+    """一次渠道尝试的诊断：卡在哪一环、这一行的开关为什么没认出。只在 chan_fast 内流转。"""
+    why: str = ""
+    stage: str = ""
+    vivo_app: str | None = None
+
+
+def channel_switch(p, name, at):
     """同时确认渠道标题、设置页身份和明确的通知开关；绝不取页面第一个开关。"""
     focus = notification_focus(p)
     if not focus or "AppNotification" in focus or not name:
@@ -339,7 +347,7 @@ def channel_switch(p, name):
     if vivo_page(focus):
         # vivo 应用总页的「允许通知」会关掉整个 App，订单、聊天提醒也没了。只认从总页点进来的渠道页：
         # 顶栏是渠道名，且不同于刚才总页的 App 名；两者同名就无法区分，跳过。
-        app = getattr(p, "vivo_app", None)
+        app = at.vivo_app
         if not app or top_title(p, root) != name or name == app:
             return None
     switches = allow_switches(p, root)
@@ -353,7 +361,7 @@ def chain(node, parents, depth=PATH_DEPTH):
         for cls, flags, count in path(node, parents, depth))
 
 
-def inline_switch(p, name):
+def inline_switch(p, name, at):
     """应用通知页里渠道行自带开关（荣耀 MagicOS 10 / Android 16，#99）。
     只认标题与渠道名完全相同、全页唯一合格的一行：行里恰有一个开关、行高合理、行内没有应用总开关。
     同名文字可能不止一处（华为 HarmonyOS 4 的应用通知页把分组名写在列表里，和渠道名相同，#287）：
@@ -397,26 +405,26 @@ def inline_switch(p, name):
             good = same
     if len(good) != 1:
         count = len(rows) + (1 if missing else 0)
-        p.why = (notes[0] if count == 1 and notes
-                 else f"同名 {count} 行" + (f"：{' | '.join(notes[:3])}" if notes else ""))
+        at.why = (notes[0] if count == 1 and notes
+                  else f"同名 {count} 行" + (f"：{' | '.join(notes[:3])}" if notes else ""))
         return None
     boxes = good[0][0]
     bl, bt, br, bb = bounds(boxes[0])
     return name, boxes[0].get("checked") == "true", ((bl + br) // 2, (bt + bb) // 2)
 
 
-def page_switch(p, name):
-    return channel_switch(p, name) or inline_switch(p, name)
+def page_switch(p, name, at):
+    return channel_switch(p, name, at) or inline_switch(p, name, at)
 
 
 POLL = 0.2                                  # 认渠道页的采样间隔
 
 
-def wait_page(p, name, rounds=12):
+def wait_page(p, name, at, rounds=12):
     def sample():
-        sw = page_switch(p, name)
+        sw = page_switch(p, name, at)
         # vivo 直达的渠道页按规则不直接用（见 channel_switch），不空等（错误日志 10-28：每个渠道 29 秒）
-        if sw is None and getattr(p, "vivo_seen", False) is True and not getattr(p, "vivo_app", None):
+        if sw is None and p.vivo_seen is True and not at.vivo_app:
             raise wait.GiveUp()
         return sw
 
@@ -428,11 +436,10 @@ def wait_page(p, name, rounds=12):
                       blocked=locked, now=time.monotonic, sleep=time.sleep)
 
 
-def via_app_page(p, pk, name):
+def via_app_page(p, pk, name, at):
     """渠道深链被拦截时，从应用通知页进入：渠道行是导航行就点进去（HyperOS），自带开关就直接用这一行（内联布局）。"""
-    p.why = ""
-    p.d.shell("am start -f 0x10008000 -a android.settings.APP_NOTIFICATION_SETTINGS"
-              f" --es android.provider.extra.APP_PACKAGE {shlex.quote(pk)}")
+    p.reader.shell("am start -f 0x10008000 -a android.settings.APP_NOTIFICATION_SETTINGS"
+                   f" --es android.provider.extra.APP_PACKAGE {shlex.quote(pk)}")
     root = None
 
     def app_page_shown():
@@ -447,14 +454,14 @@ def via_app_page(p, pk, name):
     if not wait.until(app_page_shown, tries=15, poll=POLL,
                       now=time.monotonic, sleep=time.sleep):
         if not notification_focus(p):
-            p.stage = "应用通知页没有打开"
+            at.stage = "应用通知页没有打开"
             return None
-    p.stage = "应用通知页里没找到这一行"
+    at.stage = "应用通知页里没找到这一行"
     for _ in range(9):
         if p.locked():
             raise ScreenLocked("手机锁屏了")
         if not notification_focus(p):
-            p.stage = "应用通知页翻页时离开了"
+            at.stage = "应用通知页翻页时离开了"
             return None
         root = root if root is not None else p.tree()
         vivo = vivo_page(notification_focus(p))
@@ -466,22 +473,22 @@ def via_app_page(p, pk, name):
             if row is None:
                 continue
             if not vivo and boxes:
-                p.stage = "应用通知页这一行的开关没认出"
-                return wait_page(p, name)        # 内联开关：不当作导航行点；vivo 的渠道行也带 checked，要点进去
+                at.stage = "应用通知页这一行的开关没认出"
+                return wait_page(p, name, at)    # 内联开关：不当作导航行点；vivo 的渠道行也带 checked，要点进去
             if vivo:
                 # 同一次读屏里列表有这一行渠道，说明是总页：这时的顶栏才是 App 名（直达页可能还没退掉）
-                p.vivo_app = top_title(p, root)
+                at.vivo_app = top_title(p, root)
             before = p.sig()
             l, t, r, btm = bounds(n)
             p.click((l + r) // 2, (t + btm) // 2)
             if not p.settle(before):
-                p.stage = "点这一行后页面没变"
+                at.stage = "点这一行后页面没变"
                 # vivo 进渠道页的转场慢，settle 等不到变化不代表没进去：照常认页，认不出才算没变。
                 # 错误日志 10-30：0.2.7 的 vivo 报告里 212 次「点这一行后页面没变；标题顶部」——跳过时渠道页已经打开。
                 # 只放宽 vivo：它的认页要求顶栏是渠道名、且不同于刚记下的 App 名，不会把总页的「允许通知」当成渠道开关
-                return wait_page(p, name) if vivo else None
-            p.stage = "点进去后没认出渠道页"
-            return wait_page(p, name)
+                return wait_page(p, name, at) if vivo else None
+            at.stage = "点进去后没认出渠道页"
+            return wait_page(p, name, at)
         if not p.scroll_more():
             break
         root = None
@@ -538,9 +545,9 @@ def disabled_at(p, xy):
     return False
 
 
-def undo(p, name, xy, want_on):
+def undo(p, name, xy, want_on, at):
     """只在同一位置仍是刚拨过去的那个开关时再点一次，不沿用已消失的坐标。"""
-    sw = wait_page(p, name, rounds=6)
+    sw = wait_page(p, name, at, rounds=6)
     if sw and abs(sw[2][1] - xy[1]) < 30 and sw[1] == want_on:
         p.click(*sw[2]); time.sleep(0.4); p.confirm()
         return True
@@ -549,6 +556,7 @@ def undo(p, name, xy, want_on):
 
 def toggle(p, pk, cid, want_on, name="", allowed=()):
     name = (name or "").strip()     # 渠道名可能带空格（一加 13「福利活动 」），页面文字是去掉空格的（错误日志 10-29）
+    at = Attempt()                  # 一次尝试一份诊断：上一个渠道的 why / stage 不能漏进来
     try:
         if p.locked():
             raise ScreenLocked("手机锁屏了")
@@ -559,20 +567,19 @@ def toggle(p, pk, cid, want_on, name="", allowed=()):
             return Outcome(PROTECTED, f"当前状态 {st}")
         if st in ("--", "del", "app"):
             return Outcome(kind_of_state(st))
-        p.vivo_app, p.why = None, ""
-        p.stage = "渠道深链没打开渠道页"
+        at.stage = "渠道深链没打开渠道页"
         sw = None
-        if not truncated(cid) and getattr(p, "vivo_seen", False) is not True:   # vivo 只从应用通知页进渠道页
+        if not truncated(cid) and p.vivo_seen is not True:   # vivo 只从应用通知页进渠道页
             # NEW_TASK|CLEAR_TASK 避免复用旧渠道；仍需核对真实页面。
-            p.d.shell("am start -f 0x10008000 -a android.settings.CHANNEL_NOTIFICATION_SETTINGS"
-                      f" --es android.provider.extra.APP_PACKAGE {shlex.quote(pk)}"
-                      f" --es android.provider.extra.CHANNEL_ID {shlex.quote(cid)}")
-            sw = wait_page(p, name)
+            p.reader.shell("am start -f 0x10008000 -a android.settings.CHANNEL_NOTIFICATION_SETTINGS"
+                           f" --es android.provider.extra.APP_PACKAGE {shlex.quote(pk)}"
+                           f" --es android.provider.extra.CHANNEL_ID {shlex.quote(cid)}")
+            sw = wait_page(p, name, at)
         if not sw:
-            sw = via_app_page(p, pk, name)
+            sw = via_app_page(p, pk, name, at)
         if not sw:
             # 只记 Activity、卡在哪一环和开关数量，不记页面内容；适配新系统靠它。
-            hint = "；".join(x for x in (getattr(p, "stage", ""), page_hint(p, name), getattr(p, "why", "")) if x)
+            hint = "；".join(x for x in (at.stage, page_hint(p, name), at.why) if x)
             return Outcome(NOT_CONFIRMED,
                            f"未确认「{name}」渠道页及通知开关，跳过（停在 {p.focus() or '未知页面'}；{hint}）")
         if disabled_at(p, sw[2]):
@@ -582,7 +589,7 @@ def toggle(p, pk, cid, want_on, name="", allowed=()):
             # 每次重取页面，开关消失时不能复用旧坐标。
             if p.locked():
                 raise ScreenLocked("手机锁屏了")
-            sw = wait_page(p, name, rounds=6)
+            sw = wait_page(p, name, at, rounds=6)
             if not sw:
                 return Outcome(NOT_CONFIRMED, "渠道页或开关已变化，停止操作")
             clicked = sw[1] != want_on
@@ -591,7 +598,7 @@ def toggle(p, pk, cid, want_on, name="", allowed=()):
             current, apps = parse(p)
             extra = side_effects(before, apps_before, current, apps, pk, cid, allowed)
             if extra:
-                restored = clicked and undo(p, name, sw[2], want_on)
+                restored = clicked and undo(p, name, sw[2], want_on, at)
                 raise StopBatch(f"点击后{'、'.join(extra)}发生变化，{'已点回原状态' if restored else '没能自动点回'}，"
                                 "停止整批；请在手机上核对该 App 的通知设置")
             if state(current, apps, pk, cid) == desired:
@@ -605,7 +612,7 @@ def toggle(p, pk, cid, want_on, name="", allowed=()):
     except (StopBatch, adb_link.DeviceLost, ScreenLocked):
         raise                                    # 点错开关、手机断开、锁屏：由整批处理
     except Exception as e:
-        gone = adb_link.lost_from(e, getattr(p, "serial", None))   # 读屏库的断线异常不是 RuntimeError，以前带着堆栈退出（错误日志 10-28）
+        gone = adb_link.lost_from(e, p.serial)   # 读屏库的断线异常不是 RuntimeError，以前带着堆栈退出（错误日志 10-28）
         if gone is not None:
             raise gone from e
         if isinstance(e, RuntimeError):

@@ -18,13 +18,12 @@ import chan_fast as chan
 import fast
 import run
 import troubleshooting
+from fixtures import phone_stub
 
 
 def page(xml, focus, w=1080, h=2340):
-    p = fast.Phone.__new__(fast.Phone)
-    p.link = fast.adb_link.Connection("test")
-    p.W, p.H, p.log = w, h, False
-    p.d = Mock()
+    p = phone_stub("test", d=Mock())
+    p.W, p.H = w, h
     p.locked = Mock(return_value=False)
     p.focus = Mock(return_value=focus)
     p.confirm = Mock()
@@ -63,20 +62,20 @@ class PageIdentityTests(unittest.TestCase):
     def test_honor_systemmanager_channel_page_is_trusted(self):
         # #86 PTP-AN00 实测 Activity
         p = page(CHANNEL_PAGE, "com.hihonor.systemmanager/com.hihonor.notificationmanager.ui.NotificationSettingsActivity")
-        self.assertEqual(chan.channel_switch(p, "营销通知")[0], "允许通知")
+        self.assertEqual(chan.channel_switch(p, "营销通知", chan.Attempt())[0], "允许通知")
 
     def test_huawei_and_short_activity_names(self):
         for focus in ("com.huawei.systemmanager/com.huawei.notificationmanager.ui.NotificationSettingsActivity",
                       "com.oplus.notificationmanager/.ChannelNotificationSettingsActivity"):
             p = page(CHANNEL_PAGE, focus)
-            self.assertIsNotNone(chan.channel_switch(p, "营销通知"), focus)
+            self.assertIsNotNone(chan.channel_switch(p, "营销通知", chan.Attempt()), focus)
 
     def test_lookalike_hosts_are_refused(self):
         for focus in ("com.hihonor.systemmanager/com.hihonor.systemmanager.MainActivity",
                       "com.example.systemmanager/com.hihonor.notificationmanager.ui.NotificationSettingsActivity",
                       "com.hihonor.systemmanager/com.hihonor.notificationmanager.ui.NotificationSettingsActivityX.Evil"):
             p = page(CHANNEL_PAGE, focus)
-            self.assertIsNone(chan.channel_switch(p, "营销通知"), focus)
+            self.assertIsNone(chan.channel_switch(p, "营销通知", chan.Attempt()), focus)
 
     def test_samsung_header_title_and_switchbar_label(self):
         # #95：标题在 entity_header_title，y≈577/2340；开关只有 content-desc「允许通知」
@@ -89,14 +88,14 @@ class PageIdentityTests(unittest.TestCase):
                   content-desc="允许通知" checkable="true" checked="true" bounds="[900,840][1040,920]"/>
           </node>
         </node></hierarchy>''', "com.android.settings/com.android.settings.SubSettings")
-        sw = chan.channel_switch(p, "营销信息")
+        sw = chan.channel_switch(p, "营销信息", chan.Attempt())
         self.assertIsNotNone(sw)
         self.assertEqual(sw[2], (970, 880))
 
     def test_low_title_without_header_id_is_still_refused(self):
         p = page(CHANNEL_PAGE.replace("[100,120][600,200]", "[100,700][600,780]"),
                  "com.android.settings/com.android.settings.SubSettings")
-        self.assertIsNone(chan.channel_switch(p, "营销通知"))
+        self.assertIsNone(chan.channel_switch(p, "营销通知", chan.Attempt()))
 
 
 class InlineChannelTests(unittest.TestCase):
@@ -104,22 +103,22 @@ class InlineChannelTests(unittest.TestCase):
 
     def test_inline_row_switch_is_picked_by_exact_title(self):
         p = page(INLINE_PAGE, self.focus, w=1280, h=2800)
-        self.assertEqual(chan.page_switch(p, "营销通知"), ("营销通知", True, (1135, 1124)))
+        self.assertEqual(chan.page_switch(p, "营销通知", chan.Attempt()), ("营销通知", True, (1135, 1124)))
 
     def test_app_master_and_partial_titles_are_never_targets(self):
         p = page(INLINE_PAGE, self.focus, w=1280, h=2800)
-        self.assertIsNone(chan.inline_switch(p, "显示通知"))
-        self.assertIsNone(chan.inline_switch(p, "营销"))
+        self.assertIsNone(chan.inline_switch(p, "显示通知", chan.Attempt()))
+        self.assertIsNone(chan.inline_switch(p, "营销", chan.Attempt()))
 
     def test_duplicate_titles_are_ambiguous(self):
         xml = INLINE_PAGE.replace("一般通知", "营销通知")
         p = page(xml, self.focus, w=1280, h=2800)
-        self.assertIsNone(chan.inline_switch(p, "营销通知"))
+        self.assertIsNone(chan.inline_switch(p, "营销通知", chan.Attempt()))
 
     def test_app_page_fallback_uses_inline_row_without_navigation_click(self):
         p = page(INLINE_PAGE, self.focus, w=1280, h=2800)
         with patch.object(chan.time, "sleep"):
-            self.assertEqual(chan.via_app_page(p, "com.xunmeng.pinduoduo", "营销通知")[2], (1135, 1124))
+            self.assertEqual(chan.via_app_page(p, "com.xunmeng.pinduoduo", "营销通知", chan.Attempt())[2], (1135, 1124))
         p.click.assert_not_called()
 
 
@@ -240,10 +239,8 @@ class LockedChannelTests(unittest.TestCase):
 
 class DismissTests(unittest.TestCase):
     def phone(self, xml):
-        p = fast.Phone.__new__(fast.Phone)
-        p.link = fast.adb_link.Connection("test")
-        p.W, p.H, p.log = 1272, 2772, False
-        p.d = Mock()
+        p = phone_stub("test", d=Mock())
+        p.W, p.H = 1272, 2772
         p.tree = Mock(return_value=ET.fromstring(xml))
         p.focus = Mock(return_value="com.oplus.securitypermission/.privacy.PrivacySecuritySettingsDashboardActivity")
         p.click = Mock()
@@ -300,8 +297,7 @@ class ScanWordingTests(unittest.TestCase):
 class SearchBoxTests(unittest.TestCase):
     def test_autocomplete_search_box_counts_as_input(self):
         # 荣耀 PNM-AN10 10.0.0.102 真机：设置搜索框是 AutoCompleteTextView，以前判成「搜索框没打开」
-        p = fast.Phone.__new__(fast.Phone)
-        p.link = fast.adb_link.Connection("test")
+        p = phone_stub("test")
         p.W, p.H = 1080, 2420
         p.tree = Mock(return_value=ET.fromstring('''<hierarchy><node class="android.widget.AutoCompleteTextView"
             focused="true" text="广告" bounds="[138,509][930,629]"/></hierarchy>'''))
@@ -312,9 +308,7 @@ class SearchBoxTests(unittest.TestCase):
 class LockScreenTests(unittest.TestCase):
     def test_other_true_fields_on_the_line_are_not_a_lock(self):
         # #115 跟帖：HyperOS 3 全程解锁，30 个渠道都被判成「手机锁屏了」
-        p = fast.Phone.__new__(fast.Phone)
-        p.link = fast.adb_link.Connection("test")
-        p.d = Mock()
+        p = phone_stub("test", d=Mock())
         p.d.shell.return_value = types.SimpleNamespace(output="    isKeyguardShowing=false mKeyguardOccluded=true\n")
         self.assertFalse(p.locked())
         p.d.shell.return_value = types.SimpleNamespace(output="    isKeyguardShowing=true\n")
@@ -365,22 +359,18 @@ class AdbLinkTests(unittest.TestCase):
         self.assertIn("手机助手", str(raised.exception.code))
 
     def test_engine_shell_waits_then_marks_lost(self):
-        p = fast.Phone.__new__(fast.Phone)
-        p._shell = Mock(side_effect=Exception("device 'S' not found"))
-        p.link = fast.adb_link.Connection("S", transport=fast._shell_transport(p._shell), lost_on_retry=False)
-        p.serial, p.lost = "S", False
+        shell = Mock(side_effect=Exception("device 'S' not found"))
+        p = phone_stub("S", shell=fast._shell_transport(shell))
         with patch.object(adb_link, "wait_for", return_value=False):
             with self.assertRaises(adb_link.DeviceLost):
                 p._resilient_shell("dumpsys window")
             with self.assertRaises(adb_link.DeviceLost):
                 p._resilient_shell("dumpsys window")
-        self.assertEqual(p._shell.call_count, 1)          # 已确认断开后不再每条命令等 15 秒
+        self.assertEqual(shell.call_count, 1)             # 已确认断开后不再每条命令等 15 秒
 
     def test_engine_shell_recovers_from_short_drop(self):
-        p = fast.Phone.__new__(fast.Phone)
-        p._shell = Mock(side_effect=[Exception("device 'S' not found"), types.SimpleNamespace(output="ok")])
-        p.link = fast.adb_link.Connection("S", transport=fast._shell_transport(p._shell), lost_on_retry=False)
-        p.serial, p.lost = "S", False
+        shell = Mock(side_effect=[Exception("device 'S' not found"), types.SimpleNamespace(output="ok")])
+        p = phone_stub("S", shell=fast._shell_transport(shell))
         with patch.object(adb_link, "wait_for", return_value=True):
             self.assertEqual(p._resilient_shell("echo").output, "ok")
 

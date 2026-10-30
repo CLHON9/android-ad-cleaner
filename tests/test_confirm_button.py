@@ -11,14 +11,12 @@ from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tool"))
 import fast
+from fixtures import phone_stub
 
 
 def phone():
-    p = fast.Phone.__new__(fast.Phone)
-    p.link = fast.adb_link.Connection("test")
+    p = phone_stub("test", d=Mock())
     p.W, p.H = 1080, 2400
-    p.log, p.miss, p.changed = False, 0, []
-    p.d = Mock()
     return p
 
 

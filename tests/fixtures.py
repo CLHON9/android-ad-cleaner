@@ -122,10 +122,12 @@ class Timeline:
 
 
 class Device:
-    """uiautomator2 连接的替身：只实现 Phone 真正会调到的那三个方法。"""
+    """uiautomator2 连接的替身：实现 `tool/reader.py` 的 Reader 接口，读屏按时间轴换页。"""
 
     def __init__(self, timeline, size, clock):
         self.timeline, self.size, self.clock = timeline, size, clock
+        self.settings, self.jsonrpc = {}, SimpleNamespace()
+        self.closed, self.stopped = False, None
 
     def dump_hierarchy(self):
         self.clock.read()
@@ -137,18 +139,37 @@ class Device:
     def shell(self, cmd, timeout=60):
         return SimpleNamespace(output="", exit_code=0)
 
+    def screenshot(self):
+        return None
+
+    def app_stop(self, package):
+        self.stopped = package
+
+    def close(self):
+        self.closed = True
+
+    def __call__(self, **selectors):
+        return SimpleNamespace(selector=None)
+
 
 def phone_stub(serial="test", shell=None, fast_mod=None, **fields):
     """造一个不连手机的 Phone：假 link 与假传输都由它接好，其余属性按关键字传。
 
     `shell` 顶替读屏库那条传输（签名 `(command, timeout=)`）；`serial` / `lost` 会写穿到 link 上。
     单元测试要一个「有 Phone 的形状、但没有手机」的对象时用它，装配只此一处。
+
+    声明在 `Phone.__init__` 里的状态在这里补默认值，和构造处保持一致——只有一处例外：
+    `pause_at_lock_check` 默认 False，因为假手机后面没有客户端在点「暂停」。
+    屏尺寸 `W` / `H` 与读屏 adapter `d` 不设默认：它们是每条用例的前提，由调用方传。
     """
     if fast_mod is None:
         load_tool()
         import fast as fast_mod
     p = fast_mod.Phone.__new__(fast_mod.Phone)
     p.link = fast_mod.adb_link.Connection(serial, transport=shell or _silent_shell)
+    p.log, p.miss, p.changed = False, 0, []
+    p.pause_at_lock_check = False
+    p.systemui_text, p.vivo_seen, p.safe_mode = False, False, False
     for name, value in fields.items():
         setattr(p, name, value)
     return p
@@ -173,9 +194,6 @@ def fake_phone(clock=None, size=SIZES[0], stages=((0.0, EMPTY_PAGE),),
     p = phone_stub("fake", shell=device.shell, fast_mod=fast_mod)
     p.W, p.H = size
     p.d = device
-    p.log, p.miss, p.changed = False, 0, []
-    p.why, p.stage = "", ""
-    p.vivo_seen, p.vivo_app, p.sysui = False, None, False
     p.focus = lambda: timeline.focus_at(clock.t)
     p.click = lambda *a, **k: clock.click()
     p.back = lambda *a, **k: clock.click()

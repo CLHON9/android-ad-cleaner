@@ -10,8 +10,8 @@ import xml.etree.ElementTree as ET
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tool"))
 import adb_link
-import fast
 import run
+from fixtures import phone_stub
 
 
 class HonorWKLRecipeTests(unittest.TestCase):
@@ -23,11 +23,8 @@ class HonorWKLRecipeTests(unittest.TestCase):
         return scope
 
     def phone(self, xml="<hierarchy/>"):
-        p = fast.Phone.__new__(fast.Phone)
-        p.link = fast.adb_link.Connection("test")
+        p = phone_stub("test", d=Mock())
         p.W, p.H = 1080, 2400
-        p.log, p.miss, p.changed = False, 0, []
-        p.d = Mock()
         p.d.window_size.return_value = (p.W, p.H)
         p.tree = Mock(return_value=ET.fromstring(xml))
         p.locked = Mock(return_value=False)

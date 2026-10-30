@@ -19,6 +19,7 @@ sys.path.insert(0, str(ROOT / "tool"))
 import adb_link
 import chan_fast as chan
 import fast
+from fixtures import phone_stub
 
 
 APP_FOCUS = "com.android.settings/com.android.settings.Settings$AppNotificationSettingsActivity"
@@ -28,10 +29,8 @@ OCEAN_FOCUS = "com.android.systemui/com.vivo.systemui.statusbar.notification.set
 
 def phone(pages, focus, w=1080, h=2340):
     """pages：依次返回的页面，最后一页一直重复。"""
-    p = fast.Phone.__new__(fast.Phone)
-    p.link = fast.adb_link.Connection("test")
-    p.W, p.H, p.log = w, h, False
-    p.d = Mock()
+    p = phone_stub("test", d=Mock())
+    p.W, p.H = w, h
     p.locked = Mock(return_value=False)
     p.focus = Mock(return_value=focus)
     p.confirm = Mock()
@@ -90,21 +89,22 @@ class HuaweiCardTests(unittest.TestCase):
     def test_row_inside_card_gets_its_own_switch(self):
         # 9 份报告：华为 HarmonyOS 4.0 / 4.2、EMUI 10.1、荣耀 YOK-AN10 / CDY-TN90 每个渠道都「这一行的开关没认出」
         p = phone([HUAWEI_CARD], APP_FOCUS)
-        self.assertEqual(chan.inline_switch(p, "营销通知"), ("营销通知", True, (950, 640)))
-        self.assertEqual(chan.inline_switch(p, "订单通知"), ("订单通知", True, (950, 880)))
+        self.assertEqual(chan.inline_switch(p, "营销通知", chan.Attempt()), ("营销通知", True, (950, 640)))
+        self.assertEqual(chan.inline_switch(p, "订单通知", chan.Attempt()), ("订单通知", True, (950, 880)))
 
     def test_app_page_uses_inline_switch_without_clicking_the_title(self):
         p = phone([HUAWEI_CARD], APP_FOCUS)
         with patch.object(chan.time, "sleep"):
-            self.assertEqual(chan.via_app_page(p, "com.taobao.taobao", "营销通知")[2], (950, 640))
+            self.assertEqual(chan.via_app_page(p, "com.taobao.taobao", "营销通知", chan.Attempt())[2], (950, 640))
         p.click.assert_not_called()
 
     def test_flat_card_is_refused_with_text_free_structure(self):
         p = phone([FLAT_CARD], APP_FOCUS)
-        self.assertIsNone(chan.inline_switch(p, "营销通知"))
-        self.assertIn("行内开关 2 个", p.why)
-        self.assertIn("结构 node#0 < LinearLayout#2 < ListView:s#2", p.why)
-        self.assertNotIn("营销通知", p.why)       # 只有控件类型，不带页面文字
+        at = chan.Attempt()
+        self.assertIsNone(chan.inline_switch(p, "营销通知", at))
+        self.assertIn("行内开关 2 个", at.why)
+        self.assertIn("结构 node#0 < LinearLayout#2 < ListView:s#2", at.why)
+        self.assertNotIn("营销通知", at.why)      # 只有控件类型，不带页面文字
 
     def test_skip_message_carries_the_reason(self):
         p = phone([FLAT_CARD], APP_FOCUS)
@@ -143,27 +143,26 @@ class VivoTests(unittest.TestCase):
     def test_app_page_is_read_only_after_the_old_channel_page_is_gone(self):
         # 5 份 vivo 报告「点这一行后页面没变；标题顶部」：切回应用通知页时读到的还是直达的渠道页
         p = phone([VIVO_CHANNEL, VIVO_CHANNEL, VIVO_APP, VIVO_CHANNEL], VIVO_FOCUS)
+        at = chan.Attempt()
         with patch.object(chan.time, "sleep"):
-            sw = chan.via_app_page(p, "com.taobao.taobao", "营销通知")
+            sw = chan.via_app_page(p, "com.taobao.taobao", "营销通知", at)
         p.click.assert_called_once_with(330, 1155)        # 应用通知页里的那一行，不是旧页上的标题
-        self.assertEqual(p.vivo_app, "淘宝")
+        self.assertEqual(at.vivo_app, "淘宝")
         self.assertEqual(sw[2], (950, 955))
 
     def test_deep_link_page_is_not_waited_on(self):
         # 每个渠道平均 29 秒：直达页按规则不能直接用，以前还要等满 12 轮
         p = phone([VIVO_CHANNEL], VIVO_FOCUS)
-        p.vivo_app = None
         with patch.object(chan.time, "sleep"):
-            self.assertIsNone(chan.wait_page(p, "营销通知"))
+            self.assertIsNone(chan.wait_page(p, "营销通知", chan.Attempt()))
         self.assertEqual(p.tree.call_count, 1)
         self.assertTrue(p.vivo_seen)
 
     def test_deep_link_page_gives_up_without_a_single_poll(self):
         # 认不出就当场放弃，不是「等满 12 轮再放弃」，也不该多睡一次
         p = phone([VIVO_CHANNEL], VIVO_FOCUS)
-        p.vivo_app = None
         with patch.object(chan.time, "sleep") as nap:
-            self.assertIsNone(chan.wait_page(p, "营销通知"))
+            self.assertIsNone(chan.wait_page(p, "营销通知", chan.Attempt()))
         nap.assert_not_called()
 
     def test_known_vivo_skips_the_deep_link(self):
@@ -418,10 +417,7 @@ class PauseTests(unittest.TestCase):
             self.assertIn("▶ 继续执行", printed.getvalue())
 
     def test_recipe_segments_pause_at_their_lock_check_and_wait_for_unlock(self):
-        p = fast.Phone.__new__(fast.Phone)
-        p.link = fast.adb_link.Connection("test")
-        p.pause_at_lock_check = True
-        p.d = Mock()
+        p = phone_stub("test", d=Mock(), pause_at_lock_check=True)
         p.wait_unlocked = Mock(return_value=True)
         with patch.object(fast, "pause_point", return_value=True):
             self.assertFalse(p.locked())

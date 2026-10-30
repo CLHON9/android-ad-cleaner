@@ -23,13 +23,12 @@ import adb_link
 import chan_fast as chan
 import fast
 import run
+from fixtures import phone_stub
 
 
 def channel_phone():
-    p = fast.Phone.__new__(fast.Phone)
-    p.link = fast.adb_link.Connection("test")
-    p.W, p.H, p.log = 1080, 1920, False
-    p.d = Mock()
+    p = phone_stub("test", d=Mock())
+    p.W, p.H = 1080, 1920
     p.locked = Mock(return_value=False)
     p.focus = Mock(return_value="com.android.settings/.Settings$ChannelNotificationSettingsActivity")
     p.confirm = Mock()
@@ -57,9 +56,7 @@ class ShellPipeTests(unittest.TestCase):
 
     def dumpsys_commands(self):
         calls = []
-        p = fast.Phone.__new__(fast.Phone)
-        p.link = fast.adb_link.Connection("test")
-        p.d = Mock()
+        p = phone_stub("test", d=Mock())
         p.d.shell.side_effect = lambda cmd, *a, **k: (calls.append(cmd), types.SimpleNamespace(output=""))[1]
         p.focus()
         chan.notifications_denied(p, "com.example")
@@ -72,9 +69,7 @@ class ShellPipeTests(unittest.TestCase):
 
     def test_focus_uses_first_match_when_the_whole_stream_is_read(self):
         # sed 把整条流读完后截断到前几行，输出仍可能有多条匹配；取第一行才是原来的语义
-        p = fast.Phone.__new__(fast.Phone)
-        p.link = fast.adb_link.Connection("test")
-        p.d = Mock()
+        p = phone_stub("test", d=Mock())
         p.d.shell.return_value = types.SimpleNamespace(output=(
             "  mCurrentFocus=Window{1 u0 com.a/.A}\n  mCurrentFocus=Window{2 u0 com.b/.B}\n"))
         self.assertEqual(p.focus(), "com.a/.A")
@@ -199,18 +194,18 @@ class ChannelTests(unittest.TestCase):
     def test_app_master_switch_is_not_channel_switch(self, _sleep):
         p = channel_phone()
         p.focus.return_value = "com.android.settings/.Settings$AppNotificationSettingsActivity"
-        self.assertIsNone(chan.channel_switch(p, "营销"))
+        self.assertIsNone(chan.channel_switch(p, "营销", chan.Attempt()))
 
     def test_coloros14_separate_channel_page_is_supported(self, _sleep):
         p = channel_phone()
         p.focus.return_value = "com.oplus.notificationmanager/com.oplus.notificationmanager.ChannelNotificationSettingsActivity"
-        self.assertEqual(chan.channel_switch(p, "营销")[0], "允许通知")
-        self.assertIsNone(chan.channel_switch(p, "其他渠道"))
+        self.assertEqual(chan.channel_switch(p, "营销", chan.Attempt())[0], "允许通知")
+        self.assertIsNone(chan.channel_switch(p, "其他渠道", chan.Attempt()))
 
     def test_coloros14_app_master_page_remains_forbidden(self, _sleep):
         p = channel_phone()
         p.focus.return_value = "com.oplus.notificationmanager/com.oplus.notificationmanager.AppNotificationSettingsActivity"
-        self.assertIsNone(chan.channel_switch(p, "营销"))
+        self.assertIsNone(chan.channel_switch(p, "营销", chan.Attempt()))
 
     def test_coloros14_unknown_page_or_lookalike_package_is_not_trusted(self, _sleep):
         p = channel_phone()
@@ -219,7 +214,7 @@ class ChannelTests(unittest.TestCase):
             "com.example.notificationmanager/com.oplus.notificationmanager.ChannelNotificationSettingsActivity",
         ):
             p.focus.return_value = focus
-            self.assertIsNone(chan.channel_switch(p, "营销"))
+            self.assertIsNone(chan.channel_switch(p, "营销", chan.Attempt()))
 
     def test_same_text_in_unrelated_page_cannot_authorize_click(self, _sleep):
         p = channel_phone()
@@ -233,7 +228,7 @@ class ChannelTests(unittest.TestCase):
         for node in p.tree().iter():
             if node.get("text") == "允许通知":
                 node.set("text", "智能静默")
-        self.assertIsNone(chan.channel_switch(p, "营销"))
+        self.assertIsNone(chan.channel_switch(p, "营销", chan.Attempt()))
 
     def test_vivo_app_wide_notification_page_is_refused(self, _sleep):
         # vivo 应用总页与渠道页同一个 Activity；总页有多个开关，「允许通知」管整个 App，不能点
@@ -257,15 +252,15 @@ class ChannelTests(unittest.TestCase):
         for node in p.tree().iter():
             if node.get("text") == "营销":
                 node.set("resource-id", "android:id/originui_vtoolbar_normal_title_rom14_0")
-        p.vivo_app = None
-        self.assertIsNone(chan.channel_switch(p, "营销"))          # 没经过总页：不知道 App 名
-        p.vivo_app = "示例应用"
-        self.assertEqual(chan.channel_switch(p, "营销")[0], "允许通知")
-        p.vivo_app = "营销"
-        self.assertIsNone(chan.channel_switch(p, "营销"))          # App 与渠道同名：无法区分
-        p.vivo_app = "示例应用"
+        at = chan.Attempt()
+        self.assertIsNone(chan.channel_switch(p, "营销", at))      # 没经过总页：不知道 App 名
+        at.vivo_app = "示例应用"
+        self.assertEqual(chan.channel_switch(p, "营销", at)[0], "允许通知")
+        at.vivo_app = "营销"
+        self.assertIsNone(chan.channel_switch(p, "营销", at))      # App 与渠道同名：无法区分
+        at.vivo_app = "示例应用"
         p.focus.return_value = "com.vivo.systemuiplugin/.OtherActivity"
-        self.assertIsNone(chan.channel_switch(p, "营销"))
+        self.assertIsNone(chan.channel_switch(p, "营销", at))
 
     def test_last_click_is_verified_not_reported_as_failure(self, _sleep):
         p = channel_phone()
@@ -311,7 +306,7 @@ class ChannelTests(unittest.TestCase):
             p.focus.return_value = "com.android.settings/.SubSettings"
         p.click.side_effect = navigate
         p.settle = Mock(return_value=True)
-        self.assertEqual(chan.via_app_page(p, "com.example", "营销")[0], "允许通知")
+        self.assertEqual(chan.via_app_page(p, "com.example", "营销", chan.Attempt())[0], "允许通知")
         p.click.assert_called_once()
 
     def test_restore_failure_returns_nonzero(self, _sleep):
@@ -447,11 +442,8 @@ class ExternalAdbServerTests(unittest.TestCase):
     而且 pm path 同样没输出，断连被报成「本机没有安装」，三段连报。"""
 
     def phone(self):
-        p = fast.Phone.__new__(fast.Phone)
-        p.link = fast.adb_link.Connection("test")
-        p.serial, p.lost, p.W, p.H = "S", False, 1080, 1920
-        p.log, p.miss, p.changed = False, 0, []
-        p.d = Mock()
+        p = phone_stub("S", d=Mock())
+        p.W, p.H = 1080, 1920
         p.d.app_stop = Mock()
         return p
 
@@ -666,16 +658,15 @@ class RepeatedChannelNameTests(unittest.TestCase):
     </node></hierarchy>'''
 
     def phone(self, page):
-        p = fast.Phone.__new__(fast.Phone)
-        p.link = fast.adb_link.Connection("test")
-        p.W, p.H, p.log, p.sysui = 1080, 2340, False, False
-        p.d = Mock()
+        p = phone_stub("test", d=Mock())
+        p.W, p.H = 1080, 2340
         p.focus = Mock(return_value=self.APP)
         p.tree = Mock(return_value=ET.fromstring(page))
         return p
 
     def test_group_row_without_switch_does_not_block_the_channel_row(self):
-        self.assertEqual(chan.inline_switch(self.phone(self.PAGE), "营销通知"), ("营销通知", True, (950, 980)))
+        self.assertEqual(chan.inline_switch(self.phone(self.PAGE), "营销通知", chan.Attempt()),
+                         ("营销通知", True, (950, 980)))
 
     def test_two_rows_that_both_have_switches_are_still_refused(self):
         # 两个都合格、又都在同一水平带上时无从判断哪个是渠道行，只能放弃，不能猜
@@ -683,18 +674,20 @@ class RepeatedChannelNameTests(unittest.TestCase):
                                  '<node class="android.widget.Switch" checkable="true" checked="true"'
                                  ' bounds="[900,730][1000,810]"/>')
         p = self.phone(page)
-        self.assertIsNone(chan.inline_switch(p, "营销通知"))
-        self.assertIn("同名 2 行", p.why)
+        at = chan.Attempt()
+        self.assertIsNone(chan.inline_switch(p, "营销通知", at))
+        self.assertIn("同名 2 行", at.why)
         # 放弃时两行都要留下结构，下一次上报才定位得到
-        self.assertEqual(p.why.count("结构 "), 2)
-        self.assertNotIn("营销通知", p.why)       # 只有控件类型，不带页面文字
+        self.assertEqual(at.why.count("结构 "), 2)
+        self.assertNotIn("营销通知", at.why)      # 只有控件类型，不带页面文字
 
     def test_the_row_whose_switch_sits_on_its_own_baseline_wins(self):
         # 分组名借来的开关错开一整个行高：只留和标题对齐的那一行（#287 第二次复测）
         page = self.PAGE.replace('<node text="3 个渠道" bounds="[80,810][500,840]"/>',
                                  '<node class="android.widget.Switch" checkable="true" checked="true"'
                                  ' bounds="[900,1000][1000,1080]"/>')
-        self.assertEqual(chan.inline_switch(self.phone(page), "营销通知"), ("营销通知", True, (950, 980)))
+        self.assertEqual(chan.inline_switch(self.phone(page), "营销通知", chan.Attempt()),
+                         ("营销通知", True, (950, 980)))
 
 
 if __name__ == "__main__":

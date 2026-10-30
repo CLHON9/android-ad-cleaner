@@ -435,15 +435,15 @@ def main():
         if not r or (ref and not use_ref):
             sys.exit("这个型号没有机型脚本。" + (f"同品牌有参考脚本 {os.path.relpath(r, ROOT)}，加 --ref 试用。" if r else "") +
                      "写法见 docs/04-给新机型写脚本.md")
-        if ref or not build_ok(i, recipe_meta(r)["build"]):
-            os.environ["AAC_REF"] = "1"                 # 安全模式：fast.py 不做整页全关
+        safe_mode = bool(ref or not build_ok(i, recipe_meta(r)["build"]))
+        if safe_mode:
             print("⚠ 安全模式：这份机型脚本不是按这台的型号和系统版本录的。只关脚本里点名的开关，找不到入口的步骤跳过。")
         stay_on = sh(s, "settings get global stay_on_while_plugged_in")
         try:
             sh(s, "settings put global stay_on_while_plugged_in 7")
             if not wait_unlocked(s):
                 sys.exit("✗ 手机一直锁屏，本步骤没有执行。请解锁手机、保持亮屏后重试")
-            rc = py("fast.py", "-s", s, "run", r, *rest)
+            rc = py("fast.py", "-s", s, "run", r, *(["--ref"] if safe_mode else []), *rest)
         finally:
             sh(s, f"settings put global stay_on_while_plugged_in {int(stay_on) if stay_on.isdigit() else 0}")
         sys.exit(rc)

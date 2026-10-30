@@ -17,13 +17,12 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tool"))
 import chan_fast as chan
 import fast
+from fixtures import phone_stub
 
 
 def phone(xml, w=1080, h=2340):
-    p = fast.Phone.__new__(fast.Phone)
-    p.link = fast.adb_link.Connection("test")
-    p.W, p.H, p.log, p.miss = w, h, False, 0
-    p.d = Mock()
+    p = phone_stub("test", d=Mock())
+    p.W, p.H = w, h
     p.click = Mock()
     p.tree = Mock(return_value=ET.fromstring(xml))
     return p
@@ -99,17 +98,13 @@ class ConfirmTests(unittest.TestCase):
 class FocusTests(unittest.TestCase):
     def test_null_focus_falls_back_to_focused_app(self):
         # 华为 LIO-AN00 HarmonyOS 4.2、vivo V2111A：页面在，却报「停在 未知页面」
-        p = fast.Phone.__new__(fast.Phone)
-        p.link = fast.adb_link.Connection("test")
-        p.d = Mock()
+        p = phone_stub("test", d=Mock())
         p.d.shell.return_value = types.SimpleNamespace(output=(
             "  mCurrentFocus=null\n  mFocusedApp=ActivityRecord{5e1 u0 com.android.settings/.Settings$AppNotificationSettingsActivity t88}\n"))
         self.assertEqual(p.focus(), "com.android.settings/.Settings$AppNotificationSettingsActivity")
 
     def test_resumed_activity_line_variants(self):
-        p = fast.Phone.__new__(fast.Phone)
-        p.link = fast.adb_link.Connection("test")
-        p.d = Mock()
+        p = phone_stub("test", d=Mock())
         p.d.shell.side_effect = [types.SimpleNamespace(output="  mCurrentFocus=null\n"),
                                  types.SimpleNamespace(output="    mResumedActivity: ActivityRecord{9a u0 com.vivo.x/.MainActivity t3}\n")]
         self.assertEqual(p.focus(), "com.vivo.x/.MainActivity")
@@ -278,9 +273,8 @@ class VivoSlowTransitionTests(unittest.TestCase):
     </node></hierarchy>"""
 
     def phone(self, pages, settled):
-        p = fast.Phone.__new__(fast.Phone)
-        p.W, p.H, p.log, p.miss = 1080, 2340, False, 0
-        p.d = Mock()
+        p = phone_stub("test", d=Mock())
+        p.W, p.H = 1080, 2340
         p.locked = Mock(return_value=False)
         p.focus = Mock(return_value="com.vivo.systemuiplugin/com.vivo.systemui.statusbar.notification.settings.channels.NotificationSettingsActivity")
         p.click, p.confirm, p.sig = Mock(), Mock(), Mock(return_value="")
@@ -292,16 +286,18 @@ class VivoSlowTransitionTests(unittest.TestCase):
 
     def test_channel_page_after_slow_transition_is_used(self):
         p = self.phone([self.APP, self.CHANNEL], settled=False)
+        at = chan.Attempt()
         with patch.object(chan.time, "sleep"):
-            sw = chan.via_app_page(p, "com.taobao.taobao", "营销通知")
+            sw = chan.via_app_page(p, "com.taobao.taobao", "营销通知", at)
         self.assertEqual(sw[2], (950, 955))
-        self.assertEqual(p.vivo_app, "淘宝")
+        self.assertEqual(at.vivo_app, "淘宝")
 
     def test_still_on_app_page_is_still_a_skip(self):
         p = self.phone([self.APP], settled=False)
+        at = chan.Attempt()
         with patch.object(chan.time, "sleep"):
-            self.assertIsNone(chan.via_app_page(p, "com.taobao.taobao", "营销通知"))
-        self.assertEqual(p.stage, "点这一行后页面没变")
+            self.assertIsNone(chan.via_app_page(p, "com.taobao.taobao", "营销通知", at))
+        self.assertEqual(at.stage, "点这一行后页面没变")
 
 
 if __name__ == "__main__":

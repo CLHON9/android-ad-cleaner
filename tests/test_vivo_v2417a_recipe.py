@@ -148,9 +148,10 @@ class VivoV2417ARecipeTests(unittest.TestCase):
 
     def test_direct_ad_settings_does_not_dismiss_switch_description_as_popup(self):
         p = Mock()
+        p.safe_mode = False                   # Phone 构造处声明的字段：Mock 上默认是真值，会误进安全模式
         p.locked.return_value = False
         p.focus.return_value = "com.android.settings/com.android.settings.Settings$AdAndPrivacyActivityForOsTwo"
-        p.d.shell.return_value = Mock(exit_code=0, output="Starting: Intent")
+        p.reader.shell.return_value = Mock(exit_code=0, output="Starting: Intent")   # Phone.start 走 reader
         p.texts.return_value = [("个性化广告.关闭后仍会看到广告", (1, 2, 3, 4), None)]
         p.switches.return_value = [(name, False, (1, 600))
                                    for name in ("个性化广告", "个性化推荐", "智能推荐服务")]
