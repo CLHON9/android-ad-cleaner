@@ -2,6 +2,7 @@
 
 | 品牌 | 清单 | 实测机型 |
 |---|---|---|
+| 华为 | [华为-HarmonyOS.md](华为-HarmonyOS.md) | ALN-AL00（4.2.0.223；通知路径实测，新脚本待整轮复测） |
 | OPPO / 一加 / realme | [OPPO-ColorOS.md](OPPO-ColorOS.md) | Find N6、Find X10 Pro Max、Find X9 Ultra（部分）、Find N3 典藏版（部分）、一加 Ace 2、Ace 5 |
 | 荣耀 | [荣耀-MagicOS.md](荣耀-MagicOS.md) | PNM-AN10 |
 | 小米 / Redmi | [小米-HyperOS.md](小米-HyperOS.md) | Xiaomi 18 Pro Max、18 Fold、REDMI K80 至尊版、K90 Pro Max、Redmi K70、Note 14 Pro、Note 12 Turbo |
