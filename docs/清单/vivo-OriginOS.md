@@ -202,3 +202,28 @@ Failure [only root can delete system app for a particular user]
 | `dumpsys notification` 的渠道状态和手机页面不一致 | vivo 开关存在自家通知服务里，以手机页面为准 |
 | `pm suspend` / `disable-user` / `uninstall --user 0` 全报 SecurityException | 要 root。快应用用 `quickapp off`（改 `switch_quick_app_service`） |
 | 备份里 `disabled.txt` 第一行是 `Error: Shell does not have permission to access user 666` | `pm list packages` 不带 `--user 0` 会遍历分身/隐私空间；工具已改成带 `--user 0` |
+
+## V1986A（iQOO Neo 系）差异：Funtouch OS 13.0 / Android 12
+
+2026-10-30 实测，构建 `PD1986_A_8.21.29`（`ro.vivo.os.name` 报 `Funtouch`，`ro.vivo.os.version` 13.0，Android 12）。
+机型脚本 `recipes/vivo-V1986A/`：三段（系统广告 / 阅图锁屏 / 应用商店），整轮重跑 55 秒。
+
+⚠️ **这台不是 OriginOS**：本文件上面按 OriginOS 写的路径都要先按本表核对，多数对得上，但锁屏和通知差得较多。
+
+| 位置 | 本机实际路径 | 备注 |
+|---|---|---|
+| 广告与隐私 | 设置 → 安全 → 更多安全设置 → 广告与隐私（`AdAndPrivacyActivityForOsTwo`） | 与清单一致；个性化广告、个性化推荐、智能推荐服务三个开关都在这一页 |
+| 锁屏设置 | `com.android.systemui/com.vivo.keyguard.views.KeyguardSettings` | **整页在 systemui 里**。引擎默认过滤 systemui 文字（那是状态栏），脚本读/点「阅图锁屏」前要 `p.sysui = True` |
+| 阅图锁屏 | `com.vivo.magazine/.ui.MagazineSettings` | 本机「阅图锁屏」「轮播壁纸」「锁屏横滑进入阅图」实测都已关 |
+| 应用商店 | 我的（**底部导航栏**）→ 设置 → 关于 → 服务管理 / 个性化推荐 | 底部标签 y 在 92% 以下，`p.find()` 默认不点导航栏，脚本按坐标点最后一个标签 |
+| 商店·关于入口 | 点标题文字「关于」不跳转 | 要点**副标题**「包括禁用服务设置…」所在行的中间（`x≈0.4W`） |
+| 商店·服务管理 | 9 个开关：签到有礼、顶部轮播图、顶部栏目、开屏、摇一摇、悬浮球、限时推广 + 我的页-我的服务、空间清理 | 前 7 个关，后 2 个保留 |
+| 商店·个性化推荐 | `SettingUserRecommendActivity`，标题带状态「个性化推荐，开启 / 关闭」 | 点完标题就变，引擎按标题回读会误报「关不掉」，要按开关自身的 checked 回读 |
+| i管家 | `com.iqoo.secure` V8.9.7.5，设置 → 关于 里**没有**「个性化设置」 | 本版无该开关 |
+| 全局搜索 | 设置里没有独立入口，「桌面下滑」实测为「无」 | `com.vivo.globalsearch` 装着但没挂到桌面下滑 |
+| 负一屏 | `com.vivo.hiboard` 的 `vHidden=1`（未启用），桌面左滑进不去 | 没有内容可关 |
+| 快应用 | `com.vivo.hybrid` **未安装** | `quickapp` 无组件可处理 |
+| 浏览器 / 天气 | 没有 `com.vivo.browser`；`com.vivo.weather` 未安装（另装 `com.vivo.dream.weather`） | 天气未实测，待补 |
+| 营销通知 | 通知页宿主是 **`com.android.systemui`**，不是 `com.vivo.systemuiplugin`；`CHANNEL_NOTIFICATION_SETTINGS` 的 `CHANNEL_ID` 被忽略（直达只能打开应用总页）；渠道行在「类别」分组下面，首屏没有；渠道页顶栏**没有** `originui_vtoolbar_normal_title` id | 本机 `chan-off` 11 个渠道全部跳过，见 [#336](https://github.com/rddmwmddr/android-ad-cleaner/issues/336)。人工按「顶栏文字 == 渠道名 + 同行右侧『允许通知』开关」关掉 8 个 |
+| 运营消息 | 渠道名就叫「运营消息」（`VPushChannel_0`），属营销分类；`VPushChannel_1/2` 是系统消息 / 即时消息，属服务类要保留 | `chan-scan` 会被 `SKIP` 里的「消息」滤掉，见 [#337](https://github.com/rddmwmddr/android-ad-cleaner/issues/337) |
+
