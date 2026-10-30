@@ -6,6 +6,7 @@
 | 荣耀 | [荣耀-MagicOS.md](荣耀-MagicOS.md) | PNM-AN10 |
 | 小米 / Redmi | [小米-HyperOS.md](小米-HyperOS.md) | Xiaomi 18 Pro Max、18 Fold、REDMI K80 至尊版、K90 Pro Max、Redmi K70、Note 14 Pro、Note 12 Turbo |
 | vivo / iQOO | [vivo-OriginOS.md](vivo-OriginOS.md) | X300 Ultra（V2547DA、V2547A）、iQOO V2324HA、V2361A |
+| 魅族 | [魅族-Flyme.md](魅族-Flyme.md) | 21 Pro（MEIZU 21 Pro，Flyme 12.6.0.0A；路径手动核对，脚本整段待验证） |
 
 ## 怎么读
 
