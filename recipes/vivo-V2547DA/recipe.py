@@ -1,5 +1,5 @@
 # vivo X300 Ultra 机型脚本：V2547DA（卫星通信版）。V2547A（OriginOS 7）另有社区实测脚本 recipes/vivo-V2547A/
-# 路径来源：V2547DA，OriginOS 6 / Android 16（PD2547D_A_16.0.22.8），2026-10-22 手动实测。机型脚本整段跑待验证。
+# 路径来源：V2547DA，OriginOS 6 / Android 16（PD2547D_A_16.0.21.21.W10），2026-10-28 真机整段跑通验证。
 # 别的系统版本会用安全模式跑：只关点名的开关，找不到入口就跳过。
 # 用法：python3 tool/run.py -s 序列号 recipe [段名…]   不带段名=全跑
 BUILD = "PD2547D_A_16"
@@ -62,7 +62,7 @@ def _():
     if maybe("系统管理与升级") and maybe("全局搜索"):
         if maybe("首页展示内容"):
             p.off(only=["搜索框推荐词", "推荐卡片"], page="全局搜索·首页展示内容"); p.back()
-        if maybe("推荐热搜榜单"):
+        if maybe("推荐热搜榜单", scrolls=2):
             p.off(only=["热门搜索"], page="全局搜索·热搜榜单"); p.back()
         if maybe("个性化内容"):
             p.off(only=["广告个性化"], page="全局搜索·个性化内容"); p.back()   # 历史记录、应用建议保留
@@ -78,45 +78,57 @@ def _():
 @step("应用商店")
 def _():
     p.start("com.bbk.appstore")
-    p.go("我的", "设置")
+    p.tap("我的", exact=True, scrolls=0)
+    time.sleep(0.8)
     gear()
     if maybe("关于"):
-        p.off(only=["个性化推荐"], page="商店·关于"); p.back()
-    if maybe("服务管理"):
-        p.off(only=["签到有礼", "顶部轮播图", "顶部栏目", "开屏", "摇一摇", "悬浮窗", "限时推广"],
-              keep=["我的服务", "空间清理"], page="商店·服务管理"); p.back()
+        if maybe("个性化推荐"):
+            p.off(only=["个性化推荐", "个性化广告推荐"], page="商店·个性化推荐")
+            p.back(); time.sleep(0.5)
+        if maybe("服务管理"):
+            p.off(only=["签到有礼", "顶部轮播图", "顶部栏目", "开屏", "摇一摇", "悬浮窗", "限时推广"],
+                  keep=["我的服务", "空间清理"], page="商店·服务管理")
+            p.back()
+        p.back()
     p.back(2)
 
 
 @step("浏览器")
 def _():
     p.start("com.vivo.browser")
-    p.go("我的", "设置")
-    gear()
-    if maybe("首页设置"):
-        maybe("极简首页", scrolls=0)
-        p.off(only=["首页上滑展示资讯"], page="浏览器·首页设置"); p.back()
-    if maybe("隐私权限设置"):
-        p.off(only=["个性化内容", "第三方应用来源个性化推荐"], page="浏览器·隐私"); p.back()
-    if maybe("网页浏览设置"):
-        p.off(only=["网页下载相关推荐"], page="浏览器·网页浏览"); p.back()
-    if maybe("更多设置"):
-        p.off(only=["WiFi 连接跳转新闻资讯", "跳转新闻资讯"], page="浏览器·更多设置"); p.back()
-    p.back(2)
+    # 冷启动首页没有底部「我的」：走右上菜单 → 设置。别的 vivo 型号用它当参考脚本时可能没有这个按钮，最多等 3 秒
+    if p.d(resourceId="com.vivo.browser:id/menu_btn").click_exists(timeout=3):
+        time.sleep(1.0)
+        p.tap("设置", exact=True, scrolls=0)
+    if "SettingActivity" in p.focus() or maybe("设置"):
+        if maybe("首页设置"):
+            maybe("极简首页", scrolls=0)
+            p.off(only=["首页上滑展示资讯"], page="浏览器·首页设置"); p.back()
+        p.top()
+        if maybe("网页浏览设置"):
+            p.off(only=["网页下载相关推荐"], page="浏览器·网页浏览"); p.back()
+        p.top()
+        if maybe("更多设置"):
+            p.off(only=["WiFi连接跳转新闻资讯", "WiFi 连接跳转新闻资讯", "跳转新闻资讯",
+                        "下载管理页展示热门应用", "下载管理页展示下载热榜"], page="浏览器·更多设置"); p.back()
+        p.top()
+        if maybe("隐私权限设置"):
+            p.off(only=["个性化内容", "第三方应用来源个性化推荐", "个性化广告推荐"], page="浏览器·隐私"); p.back()
+        p.back(2)
 
 
 @step("i管家")
 def _():
-    p.start("com.iqoo.secure")
-    gear()
+    p.d.shell("am start -f 0x10008000 -n com.iqoo.secure/.MainSettings")
+    time.sleep(1.0)
     if maybe("关于") and maybe("个性化设置"):
-        p.off(only=["应用个性化推荐"], page="i管家·个性化设置")
+        p.off(only=["应用个性化推荐", "清理个性化推荐"], page="i管家·个性化设置")
     p.back(3)
 
 
 @step("天气")
 def _():
-    p.start("com.vivo.weather")
-    gear()
+    p.d.shell("am start -f 0x10008000 -n com.vivo.weather/.WeatherSettings")
+    time.sleep(1.0)
     p.off(only=["天气服务"], keep=["气象预警", "异常天气", "地震预警"], page="天气·设置")   # 只关「天气相关热点资讯通知」
-    p.back(2)
+    p.back(1)

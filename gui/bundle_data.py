@@ -6,8 +6,8 @@ import sys
 
 def bundle_data(root):
     root = Path(root).resolve()
-    patterns = ("tool/*.py", "recipes/*/recipe.py", "images/*.png",
-                "gui/web/index.html", "gui/web/img/*.png")
+    patterns = ("tool/*.py", "tool/*.dex", "recipes/*/recipe.py", "images/*.png",
+                "gui/web/index.html", "gui/web/chime.wav", "gui/web/img/*.png")
     data = []
     for pattern in patterns:
         for path in sorted(root.glob(pattern)):

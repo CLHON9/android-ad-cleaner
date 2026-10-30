@@ -151,8 +151,13 @@ def _():
 @step("游戏中心")
 def _():
     p.start("com.nearme.gamecenter")
-    p.go("我的", "设置")
-    p.tap("设置", exact=True)
+    if not p.tap("我的", exact=True, scrolls=0):
+        raise RuntimeError("没找到底部「我的」")
+    time.sleep(1.2)
+    p.dismiss()
+    # ColorOS 17 的「设置」是右上角没有文字的齿轮，按文字找不到（#292）
+    if not p.tap("设置", exact=False, scrolls=0) and not p.tap_icon(["隐私开关设置", "隐私"]):
+        raise RuntimeError("没找到设置入口：右上角图标都点过")
     if p.tap("隐私开关设置", exact=True) and p.tap("个性化推荐管理", exact=True):
         p.off(only=["个性化推荐"], page="游戏中心·个性化")
     p.back(4)

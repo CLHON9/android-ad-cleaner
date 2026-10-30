@@ -6,6 +6,8 @@ import json
 import ntpath
 import os
 from pathlib import Path
+import re
+import subprocess
 import sys
 import tempfile
 import types
@@ -17,6 +19,7 @@ from PIL import Image
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tool"))
+import adb_link
 import chan_fast as chan
 import fast
 import run
@@ -42,6 +45,36 @@ def channel_phone():
 
 def snapshot(on=True, app_off=False):
     return {("com.example", "promo"): ("营销", 3 if on else 0, False)}, {"com.example": app_off}
+
+
+class ShellPipeTests(unittest.TestCase):
+    """#205：管道末端提前退出（grep -m / head -n）→ dumpsys 收到 SIGPIPE → adbutils 判
+    「shell output invalid」，chan-off 整段中断。末端必须把整条流读完。"""
+
+    # 管道末端只要提前退出就会触发 SIGPIPE：grep -m N、head（-N 或 -n N）、sed 'Nq'
+    EARLY_EXIT = re.compile(r"grep\s+-m\s*\d|\|\s*head\b|\|\s*sed\s+['\"]?\d+q")
+
+    def dumpsys_commands(self):
+        calls = []
+        p = fast.Phone.__new__(fast.Phone)
+        p.d = Mock()
+        p.d.shell.side_effect = lambda cmd, *a, **k: (calls.append(cmd), types.SimpleNamespace(output=""))[1]
+        p.focus()
+        chan.notifications_denied(p, "com.example")
+        return calls
+
+    def test_dumpsys_pipelines_read_to_the_end(self):
+        for cmd in self.dumpsys_commands() + [adb_link.KEYGUARD_CMD]:
+            with self.subTest(cmd=cmd):
+                self.assertNotRegex(cmd, self.EARLY_EXIT)
+
+    def test_focus_uses_first_match_when_the_whole_stream_is_read(self):
+        # sed 把整条流读完后截断到前几行，输出仍可能有多条匹配；取第一行才是原来的语义
+        p = fast.Phone.__new__(fast.Phone)
+        p.d = Mock()
+        p.d.shell.return_value = types.SimpleNamespace(output=(
+            "  mCurrentFocus=Window{1 u0 com.a/.A}\n  mCurrentFocus=Window{2 u0 com.b/.B}\n"))
+        self.assertEqual(p.focus(), "com.a/.A")
 
 
 class ScreenshotTests(unittest.TestCase):
@@ -72,6 +105,87 @@ class ChannelTests(unittest.TestCase):
             path.write_text("com.example\n")
             with self.assertRaisesRegex(ValueError, "第 1 行"):
                 chan.load(path)
+
+    def test_channel_list_with_trailing_spaces_is_normalized(self, _sleep):
+        # #194 纵横读屏：清单里同一渠道带尾空格出现两次，后一行被报「未确认」，收尾误报仍开着 1 个
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory, "channels.tsv")
+            path.write_text("com.example\tpromo \ncom.example\tpromo\t营销 \n", encoding="utf-8")
+            self.assertEqual(chan.load(path), [("com.example", "promo", "营销")])
+
+    def test_dump_ids_with_trailing_spaces_are_one_channel(self, _sleep):
+        # 系统回读里同一渠道可能带尾随空格；内部键必须一致，否则 load 后的 ID 查不到状态
+        p = channel_phone()
+        p.d.shell.return_value.output = """PackagePreferences:
+      AppSettings: com.zongheng.reader importance=DEFAULT
+        NotificationChannel{mId='flhd', mName=福利活动, mDescription=null, mImportance=0, mDeleted=false}
+        NotificationChannel{mId='flhd ', mName=福利活动 , mDescription=null, mImportance=3, mDeleted=false}
+    """
+        d, _ = chan.parse(p)
+        self.assertEqual(list(d), [("com.zongheng.reader", "flhd")])
+        self.assertEqual(d[("com.zongheng.reader", "flhd")][:2], ("福利活动", 3))
+
+    def test_deleted_duplicate_does_not_override_live_channel(self, _sleep):
+        p = channel_phone()
+        p.d.shell.return_value.output = """PackagePreferences:
+      AppSettings: com.example importance=DEFAULT
+        NotificationChannel{mId='promo', mName=活动优惠, mDescription=null, mImportance=0, mDeleted=false}
+        NotificationChannel{mId='promo ', mName=活动优惠 , mDescription=null, mImportance=3, mDeleted=true}
+    """
+        d, _ = chan.parse(p)
+        self.assertEqual(d[("com.example", "promo")], ("活动优惠", 0, False))
+
+    def test_unspecified_importance_keeps_channel_on(self, _sleep):
+        # 0 才是已屏蔽；-1000（未指定）名义上仍开着，合并时不能被已关的那条盖掉
+        p = channel_phone()
+        p.d.shell.return_value.output = """PackagePreferences:
+      AppSettings: com.example importance=DEFAULT
+        NotificationChannel{mId='promo', mName=营销, mDescription=null, mImportance=0, mDeleted=false}
+        NotificationChannel{mId='promo ', mName=营销 , mDescription=null, mImportance=-1000, mDeleted=false}
+    """
+        d, _ = chan.parse(p)
+        self.assertEqual(d[("com.example", "promo")][1], -1000)
+        self.assertEqual(chan.state(d, {}, "com.example", "promo"), "ON")
+
+    def test_deleted_duplicate_does_not_mark_channel_locked(self, _sleep):
+        p = channel_phone()
+        p.d.shell.return_value.output = """PackagePreferences:
+      AppSettings: com.example (10001) importance=DEFAULT fixedImportance=true
+        NotificationChannel{mId='promo', mName=活动优惠, mDescription=null, mImportance=3, mDeleted=false}
+        NotificationChannel{mId='promo ', mName=活动优惠 , mDescription=null, mImportance=3, mDeleted=true, mBlockableSystem=false}
+    """
+        locked = set()
+        chan.parse(p, locked)
+        self.assertEqual(locked, set())
+
+    def test_repeated_rows_do_not_count_as_still_on(self, _sleep):
+        result = types.SimpleNamespace(returncode=0, stderr="", stdout="""PackagePreferences:
+      AppSettings: com.example importance=DEFAULT
+        NotificationChannel{mId='promo', mName=营销, mDescription=null, mImportance=3, mDeleted=false}
+    """)
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory, "channels.tsv")
+            path.write_text("com.example\tpromo \t营销 \ncom.example\tpromo\t营销\n", encoding="utf-8")
+            with patch.object(chan.subprocess, "run", return_value=result), \
+                 patch.object(sys, "argv", ["chan_fast.py", "-s", "test", "verify", str(path)]), \
+                 contextlib.redirect_stdout(io.StringIO()) as out:
+                chan.main()
+        # 渠道仍开着：按渠道计 1 个，重复行不能算成 2 个
+        self.assertIn("营销渠道仍开着: 1 个", out.getvalue())
+        self.assertNotIn("营销渠道仍开着: 2 个", out.getvalue())
+
+    def test_scan_lists_repeated_channel_once(self, _sleep):
+        result = types.SimpleNamespace(returncode=0, stderr="", stdout="""PackagePreferences:
+      AppSettings: com.zongheng.reader importance=DEFAULT
+        NotificationChannel{mId='flhd', mName=福利活动, mDescription=null, mImportance=3, mDeleted=false}
+        NotificationChannel{mId='flhd ', mName=福利活动 , mDescription=null, mImportance=3, mDeleted=false}
+    """)
+        with patch.object(chan.subprocess, "run", return_value=result), \
+             patch.object(chan, "app_labels", return_value={}), \
+             patch.object(sys, "argv", ["chan_fast.py", "-s", "test", "scan"]), \
+             contextlib.redirect_stdout(io.StringIO()) as out:
+            chan.main()
+        self.assertEqual(out.getvalue(), "com.zongheng.reader\tflhd\t福利活动\n")
 
     def test_notification_dump_failure_is_not_empty_success(self, _sleep):
         p = channel_phone()
@@ -108,7 +222,7 @@ class ChannelTests(unittest.TestCase):
         p = channel_phone()
         p.focus.return_value = "com.example/.MarketingSettings"
         with patch.object(chan, "parse", return_value=snapshot()), patch.object(chan, "via_app_page", return_value=None):
-            self.assertIn("未确认", chan.toggle(p, "com.example", "promo", False, "营销"))
+            self.assertEqual(chan.toggle(p, "com.example", "promo", False, "营销").kind, chan.NOT_CONFIRMED)
         p.click.assert_not_called()
 
     def test_no_fallback_to_first_switch(self, _sleep):
@@ -129,7 +243,7 @@ class ChannelTests(unittest.TestCase):
           <node class="android.widget.Switch" checked="false" checkable="true" bounds="[900,520][1040,590]"/></node>''')
         root[0].append(extra)
         with patch.object(chan, "parse", return_value=snapshot()), patch.object(chan, "via_app_page", return_value=None):
-            self.assertIn("未确认", chan.toggle(p, "com.example", "promo", False, "营销"))
+            self.assertEqual(chan.toggle(p, "com.example", "promo", False, "营销").kind, chan.NOT_CONFIRMED)
         p.click.assert_not_called()
 
     def test_vivo_channel_page_needs_app_title_from_app_page(self, _sleep):
@@ -153,14 +267,14 @@ class ChannelTests(unittest.TestCase):
     def test_last_click_is_verified_not_reported_as_failure(self, _sleep):
         p = channel_phone()
         with patch.object(chan, "parse", side_effect=[snapshot(), snapshot(), snapshot(), snapshot(False)]):
-            self.assertIsNone(chan.toggle(p, "com.example", "promo", False, "营销"))
+            self.assertEqual(chan.toggle(p, "com.example", "promo", False, "营销").kind, chan.DONE)
         self.assertEqual(p.click.call_count, 3)
 
     def test_changed_page_does_not_reuse_coordinates(self, _sleep):
         p = channel_phone()
         p.click.side_effect = lambda *xy: p.tree.__setattr__("return_value", ET.fromstring("<hierarchy/>"))
         with patch.object(chan, "parse", return_value=snapshot()):
-            self.assertIn("已变化", chan.toggle(p, "com.example", "promo", False, "营销"))
+            self.assertIn("已变化", chan.toggle(p, "com.example", "promo", False, "营销").detail)
         self.assertEqual(p.click.call_count, 1)
 
     def test_app_notification_change_aborts_batch(self, _sleep):
@@ -176,7 +290,7 @@ class ChannelTests(unittest.TestCase):
             if node.get("checkable") == "true":
                 node.set("checked", "false")
         with patch.object(chan, "parse", return_value=snapshot()):
-            self.assertIn("不一致", chan.toggle(p, "com.example", "promo", False, "营销"))
+            self.assertIn("不一致", chan.toggle(p, "com.example", "promo", False, "营销").detail)
         p.click.assert_not_called()
 
     def test_app_page_fallback_navigates_then_checks_channel(self, _sleep):
@@ -201,7 +315,7 @@ class ChannelTests(unittest.TestCase):
         with patch.object(chan, "Phone", return_value=channel_phone()), patch.object(chan, "keep_awake", return_value=None), \
              patch.object(chan, "load", return_value=[("com.example", "promo", "营销")]), \
              patch.object(chan, "parse", return_value=snapshot(False)), \
-             patch.object(chan, "toggle", return_value="未确认渠道页"), \
+             patch.object(chan, "toggle", return_value=chan.Outcome(chan.NOT_CONFIRMED, "未确认渠道页")), \
              patch.object(sys, "argv", ["chan_fast.py", "-s", "test", "on", "channels.tsv"]), \
              contextlib.redirect_stdout(io.StringIO()):
             with self.assertRaises(SystemExit) as raised:
@@ -315,13 +429,177 @@ class BackupTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory, \
              patch.object(run, "latest_backup", return_value=directory), \
              patch.object(run, "info", return_value={"model": "test"}), \
-             patch.object(run, "sh", return_value="") as shell, \
+             patch.object(run, "sh", side_effect=lambda _s, c: "package:com.example" if "list packages" in c else "") as shell, \
              patch.object(sys, "argv", ["run.py", "-s", "test", "backup"]), \
              contextlib.redirect_stdout(io.StringIO()):
             run.main()
         calls = [c.args[1] for c in shell.call_args_list if "pm list packages" in c.args[1]]
-        self.assertEqual(len(calls), 3)
-        self.assertTrue(all("--user 0" in cmd for cmd in calls))
+        self.assertEqual(calls[0], "pm list packages")          # 探活用完整清单，只有它不可能合法为空
+        self.assertEqual(calls[1:], ["pm list packages --user 0 -s", "pm list packages --user 0 -3",
+                                     "pm list packages --user 0 -d"])
+
+
+class ExternalAdbServerTests(unittest.TestCase):
+    """#293：复用了外部 adb server（Iriun 等），对方退出后整轮中断，
+    而且 pm path 同样没输出，断连被报成「本机没有安装」，三段连报。"""
+
+    def phone(self):
+        p = fast.Phone.__new__(fast.Phone)
+        p.serial, p.lost, p.W, p.H = "S", False, 1080, 1920
+        p.log, p.miss, p.changed = False, 0, []
+        p.d = Mock()
+        p.d.app_stop = Mock()
+        return p
+
+    def test_disconnected_device_is_not_reported_as_missing_app(self):
+        p = self.phone()
+        p.d.shell.side_effect = [types.SimpleNamespace(exit_code=1, output=""),
+                                 types.SimpleNamespace(exit_code=0, output="")]
+        with patch.object(adb_link, "detached", return_value=True):
+            with self.assertRaises(adb_link.DeviceLost) as raised:
+                p.start("com.heytap.yoli")
+        self.assertNotIn("没有安装", str(raised.exception))
+        self.assertIn("手机助手", str(raised.exception))        # 完整排查说明只在这一处出现
+        self.assertTrue(p.lost)
+
+    def test_client_error_text_alone_identifies_the_disconnect(self):
+        p = self.phone()
+        p.d.shell.side_effect = [types.SimpleNamespace(exit_code=0, output="error: device 'S' not found"),
+                                 types.SimpleNamespace(exit_code=0, output="")]
+        with patch.object(adb_link, "detached") as detached:
+            with self.assertRaises(adb_link.DeviceLost):
+                p.start("com.heytap.yoli")
+        detached.assert_not_called()                           # 输出已经说明是断连，不再多查一次
+
+    def test_missing_app_is_still_named_when_phone_is_there(self):
+        p = self.phone()
+        p.d.shell.side_effect = [types.SimpleNamespace(exit_code=0, output="No activities found to run, monkey aborted."),
+                                 types.SimpleNamespace(exit_code=0, output="")]
+        with patch.object(adb_link, "detached", return_value=False):
+            with self.assertRaisesRegex(RuntimeError, "本机没有安装 com.heytap.yoli"):
+                p.start("com.heytap.yoli")
+        self.assertFalse(p.lost)
+
+    def test_unknown_connection_state_is_not_reported_as_disconnect(self):
+        # 找不到 adb、get-state 超时：只能算状态未知，不能把参考脚本里的「没装」报成断连。
+        with patch.object(adb_link, "adb_path", return_value=None):
+            self.assertFalse(adb_link.detached("S"))
+        with patch.object(adb_link, "adb_path", return_value="/usr/bin/adb"), \
+             patch.object(adb_link.subprocess, "run", side_effect=subprocess.TimeoutExpired("adb", 8)):
+            self.assertFalse(adb_link.detached("S"))
+
+    def test_client_answer_names_the_disconnect(self):
+        with patch.object(adb_link, "adb_path", return_value="/usr/bin/adb"), \
+             patch.object(adb_link.subprocess, "run", return_value=types.SimpleNamespace(
+                 returncode=1, stdout="", stderr="adb: device 'S' not found")):
+            self.assertTrue(adb_link.detached("S"))
+        with patch.object(adb_link, "adb_path", return_value="/usr/bin/adb"), \
+             patch.object(adb_link.subprocess, "run", return_value=types.SimpleNamespace(
+                 returncode=0, stdout="device\n", stderr="")):
+            self.assertFalse(adb_link.detached("S"))
+
+    def test_lost_screen_library_error_marks_the_run_lost(self):
+        p = self.phone()
+        p.d.dump_hierarchy.side_effect = Exception("HTTPConnectionPool(host='127.0.0.1', port=5037): Max retries exceeded")
+        with self.assertRaises(Exception):
+            p.tree()
+        self.assertTrue(p.lost)                                # 后面的段据此快速跳过
+
+    def test_confirmed_loss_skips_remaining_steps_without_touching_adb(self):
+        p = self.phone()
+        p.lost = True
+        for step in (lambda: p.start("com.heytap.yoli"), p.tree, p.focus, lambda: p.click(10, 10),
+                     lambda: p._resilient_shell("dumpsys window")):
+            with self.assertRaises(adb_link.DeviceLost) as raised:
+                step()
+            self.assertEqual(str(raised.exception), adb_link.REPEAT)   # 后面的段只报一句
+        p.d.shell.assert_not_called()
+        p.d.dump_hierarchy.assert_not_called()
+        p.d.window_size.assert_not_called()
+        p.d.app_stop.assert_not_called()
+
+
+
+
+
+class PackageListTests(unittest.TestCase):
+    """#192：HyperOS 4 上 `pm list packages` 任何参数都无输出且 exit 0；要回退 `cmd package list`。"""
+
+    def test_pm_list_without_output_falls_back_to_cmd_package(self):
+        with patch.object(run, "sh", side_effect=lambda _s, c: "package:com.example" if c.startswith("cmd package") else ""):
+            self.assertEqual(run.pkg_list("test", "--user 0 -s"), "package:com.example")
+
+    def test_pm_list_output_skips_the_fallback(self):
+        with patch.object(run, "sh", return_value="package:com.example") as shell:
+            self.assertEqual(run.pkg_list("test", "--user 0 -s"), "package:com.example")
+        self.assertEqual([c.args[1] for c in shell.call_args_list], ["pm list packages --user 0 -s"])
+
+    def test_backup_writes_package_lists_when_pm_list_is_silent(self):
+        def shell(_s, cmd):
+            if cmd.startswith("pm list packages"):
+                return ""
+            if cmd.endswith(" -d"):
+                return "package:com.disabled"
+            if "list packages" in cmd:
+                return "package:com.system\npackage:com.user"
+            return ""
+        with tempfile.TemporaryDirectory() as directory, \
+             patch.object(run, "latest_backup", return_value=directory), \
+             patch.object(run, "info", return_value={"model": "test"}), \
+             patch.object(run, "sh", side_effect=shell), \
+             patch.object(sys, "argv", ["run.py", "-s", "test", "backup"]), \
+             contextlib.redirect_stdout(io.StringIO()):
+            run.main()
+            for name in ("sys.txt", "user.txt", "disabled.txt"):
+                self.assertTrue(Path(directory, name).read_text(encoding="utf-8"), name)
+
+    def test_backup_fails_when_both_paths_are_silent(self):
+        with tempfile.TemporaryDirectory() as directory, \
+             patch.object(run, "latest_backup", return_value=directory), \
+             patch.object(run, "info", return_value={"model": "test"}), \
+             patch.object(run, "sh", return_value=""), \
+             patch.object(sys, "argv", ["run.py", "-s", "test", "backup"]), \
+             contextlib.redirect_stderr(io.StringIO()), contextlib.redirect_stdout(io.StringIO()):
+            with self.assertRaises(SystemExit) as raised:
+                run.main()
+            self.assertIn("读不到包列表", str(raised.exception.code))
+            # 失败时不留半成品快照：后续步骤会把最新目录当成「改动前的快照」。
+            self.assertEqual(os.listdir(directory), [])
+
+    def test_backup_keeps_legitimately_empty_filtered_lists(self):
+        def shell(_s, cmd):
+            return "package:com.system" if cmd.endswith(" -s") or cmd == "pm list packages" else ""
+        with tempfile.TemporaryDirectory() as directory, \
+             patch.object(run, "latest_backup", return_value=directory), \
+             patch.object(run, "info", return_value={"model": "test"}), \
+             patch.object(run, "sh", side_effect=shell), \
+             patch.object(sys, "argv", ["run.py", "-s", "test", "backup"]), \
+             contextlib.redirect_stdout(io.StringIO()):
+            run.main()
+            self.assertEqual(Path(directory, "sys.txt").read_text(encoding="utf-8"), "package:com.system")
+            self.assertEqual(Path(directory, "user.txt").read_text(encoding="utf-8"), "")
+
+    def test_package_list_error_text_is_kept_for_troubleshooting(self):
+        def shell(_s, cmd):
+            return "Error: Shell does not have permission to access user 666" if cmd.startswith("pm list") else ""
+        with patch.object(run, "sh", side_effect=shell):
+            self.assertIn("does not have permission", run.pkg_list("test", "--user 0 -d"))
+
+    def test_manually_disabled_quickapp_is_closed_via_cmd_package(self):
+        with patch.object(run, "installed", side_effect=lambda _s, pkg: pkg == "com.miui.hybrid"), \
+             patch.object(run, "quickapp_switch", return_value=None), \
+             patch.object(run, "suspended", return_value=False), \
+             patch.object(run, "sh", side_effect=lambda _s, c: "package:com.miui.hybrid" if c.startswith("cmd package") else ""):
+            entries = run.quickapps("test-device")
+        self.assertTrue(entries[0]["closed"])
+
+    def test_not_disabled_quickapp_stays_open(self):
+        with patch.object(run, "installed", side_effect=lambda _s, pkg: pkg == "com.miui.hybrid"), \
+             patch.object(run, "quickapp_switch", return_value=None), \
+             patch.object(run, "suspended", return_value=False), \
+             patch.object(run, "sh", return_value=""):
+            entries = run.quickapps("test-device")
+        self.assertFalse(entries[0]["closed"])
 
 
 class DesktopTests(unittest.TestCase):
@@ -359,6 +637,49 @@ class DesktopTests(unittest.TestCase):
         self.assertIn("index.html", url)
         self.assertFalse(fake.start.call_args.kwargs["http_server"])
         self.assertEqual(fake.start.call_args.kwargs["gui"], "edgechromium")
+
+
+class RepeatedChannelNameTests(unittest.TestCase):
+    """#287：华为 HarmonyOS 4 的应用通知页把分组名写在列表里，和渠道名同名。
+    inline_switch 以前看到两处同名就放弃，其实只有一处带开关。"""
+
+    APP = "com.android.settings/.Settings$AppNotificationSettingsActivity"
+
+    PAGE = '''<hierarchy><node class="android.widget.FrameLayout" bounds="[0,0][1080,2340]">
+      <node text="淘宝" bounds="[60,100][600,200]"/>
+      <node class="androidx.recyclerview.widget.RecyclerView" scrollable="true" bounds="[0,300][1080,2200]">
+        <node class="android.widget.LinearLayout" bounds="[40,700][1040,840]">
+          <node text="营销通知" bounds="[80,720][500,800]"/>
+          <node text="3 个渠道" bounds="[80,810][500,840]"/>
+        </node>
+        <node class="android.widget.LinearLayout" bounds="[40,880][1040,1080]">
+          <node class="android.widget.LinearLayout" bounds="[80,900][800,1060]">
+            <node text="营销通知" bounds="[80,920][500,980]"/>
+          </node>
+          <node class="com.huawei.uikit.hwswitch.widget.HwSwitch" checkable="true" checked="true" bounds="[900,940][1000,1020]"/>
+        </node>
+      </node>
+    </node></hierarchy>'''
+
+    def phone(self, page):
+        p = fast.Phone.__new__(fast.Phone)
+        p.W, p.H, p.log, p.sysui = 1080, 2340, False, False
+        p.d = Mock()
+        p.focus = Mock(return_value=self.APP)
+        p.tree = Mock(return_value=ET.fromstring(page))
+        return p
+
+    def test_group_row_without_switch_does_not_block_the_channel_row(self):
+        self.assertEqual(chan.inline_switch(self.phone(self.PAGE), "营销通知"), ("营销通知", True, (950, 980)))
+
+    def test_two_rows_that_both_have_switches_are_still_refused(self):
+        # 两个都合格时无从判断哪个是渠道行，只能放弃，不能猜
+        page = self.PAGE.replace('<node text="3 个渠道" bounds="[80,810][500,840]"/>',
+                                 '<node class="android.widget.Switch" checkable="true" checked="true"'
+                                 ' bounds="[900,730][1000,810]"/>')
+        p = self.phone(page)
+        self.assertIsNone(chan.inline_switch(p, "营销通知"))
+        self.assertIn("同名 2 行", p.why)
 
 
 if __name__ == "__main__":

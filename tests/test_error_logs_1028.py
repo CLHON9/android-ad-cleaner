@@ -1,5 +1,7 @@
 """2026-10-28 错误日志回归：0.2.5 上线后用户确认上报的 122 份日志归类出的问题。
 不用手机，模拟 dumpsys 输出、页面与系统回读。"""
+import os
+os.environ.setdefault("AAC_NO_SOUND", "1")     # 客户端提示音：测试里不出声
 import contextlib
 import importlib.util
 import io
@@ -109,6 +111,7 @@ class FocusTests(unittest.TestCase):
 
 ITEMS = [("com.a", "promo", "营销通知"), ("com.b", "news", "资讯推送"), ("com.c", "deal", "优惠活动")]
 DATA = {(pk, cid): (label, 3, False) for pk, cid, label in ITEMS}
+OK = chan.Outcome(chan.DONE)
 
 
 def run_off(toggle, phone=None, data=None):
@@ -138,7 +141,7 @@ class LockedBatchTests(unittest.TestCase):
 
     def test_lock_midway_waits_then_retries_the_same_channel(self):
         phone = Mock(wait_unlocked=Mock(return_value=True), lost=False)
-        code, printed, toggled, _ = run_off([None, chan.ScreenLocked("手机锁屏了"), None, None],
+        code, printed, toggled, _ = run_off([OK, chan.ScreenLocked("手机锁屏了"), OK, OK],
                                            phone, {k: (v[0], 0, False) for k, v in DATA.items()})
         self.assertEqual(code, 0)
         self.assertEqual(toggled.call_count, 4)
@@ -147,7 +150,7 @@ class LockedBatchTests(unittest.TestCase):
     def test_lock_that_stays_stops_the_batch_with_one_line(self):
         phone = Mock(lost=False)
         phone.wait_unlocked.side_effect = [True, False]
-        code, printed, toggled, _ = run_off([None, chan.ScreenLocked("手机锁屏了")], phone)
+        code, printed, toggled, _ = run_off([OK, chan.ScreenLocked("手机锁屏了")], phone)
         self.assertEqual(code, 1)
         self.assertEqual(toggled.call_count, 2)
         self.assertIn("剩下 2 项没有处理", printed)
@@ -159,7 +162,7 @@ class GreyedChannelTests(unittest.TestCase):
         # 23 份报告：只剩一个系统锁定（开关是灰的）的渠道开着，整步被标成失败
         after = {k: (v[0], 0, False) for k, v in DATA.items()}
         after[("com.b", "news")] = ("资讯推送", 3, False)
-        code, printed, _, _ = run_off([None, chan.GREYED, None], data=after)
+        code, printed, _, _ = run_off([OK, chan.Outcome(chan.GREYED), OK], data=after)
         self.assertEqual(code, 0)
         self.assertIn("系统锁定", printed)
         self.assertNotIn("仍开着：", printed)
@@ -173,7 +176,7 @@ class GreyedChannelTests(unittest.TestCase):
 
 class DisconnectTests(unittest.TestCase):
     def test_lost_device_is_reported_once_without_traceback(self):
-        code, printed, toggled, _ = run_off([None, adb_link.lost("adb.exe: device 'x' not found")])
+        code, printed, toggled, _ = run_off([OK, adb_link.lost("adb.exe: device 'x' not found")])
         self.assertEqual(code, 1)
         self.assertEqual(printed.count("adb 连接断开了"), 1)
         self.assertNotIn("Traceback", printed)
@@ -249,7 +252,7 @@ class ListRowTests(unittest.TestCase):
         p.confirm = Mock()
         with patch.object(chan, "parse", return_value=({("com.example", "promo"): ("营销通知", 3, False)}, {})), \
              patch.object(chan.time, "sleep"):
-            message = chan.toggle(p, "com.example", "promo", False, "营销通知")
+            message = chan.toggle(p, "com.example", "promo", False, "营销通知").detail
         self.assertIn("停在 " + self.focus, message)
         self.assertIn("点这一行后页面没变", message)
         self.assertIn("标题列表，允许通知开关 0 个", message)

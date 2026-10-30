@@ -31,6 +31,7 @@ aside{background:var(--side);border-right:1px solid var(--line);padding:22px 14p
 .link{background:none;border:0;color:var(--sub);text-align:left;padding:7px 10px;border-radius:7px;cursor:pointer;font:inherit}
 .link:hover{background:var(--panel);color:var(--text)}
 .ver{color:var(--sub);font-size:12px;padding:6px 10px}
+.link.newver{color:var(--accent);font-weight:600;background:var(--accent-weak)}
 main{overflow:auto;padding:30px 36px 40px}
 h1{font-size:22px;margin:0 0 4px}
 .lead{color:var(--sub);margin:0 0 22px}
@@ -71,6 +72,8 @@ label.chk small{color:var(--sub);display:block}
 .chan table{width:100%;border-collapse:collapse;font-size:13px}
 .chan td{padding:6px 10px;border-bottom:1px solid var(--line)}
 .chan td.pkg{color:var(--sub);font-family:var(--mono);font-size:12px}
+.chan td.appname{font-weight:500}
+.chan th{position:sticky;top:0;background:var(--panel);text-align:left;font-weight:500;color:var(--sub);font-size:12px;padding:6px 10px;border-bottom:1px solid var(--line)}
 .bar{height:8px;background:var(--line);border-radius:99px;overflow:hidden}
 .bar i{display:block;height:100%;background:var(--accent);transition:width .3s}
 .log{background:var(--log);color:var(--logtext);font-family:var(--mono);font-size:12px;border-radius:10px;padding:14px;height:340px;overflow:auto;white-space:pre-wrap;margin-top:14px}
@@ -108,6 +111,7 @@ pre.report{background:var(--log);color:var(--logtext);font-family:var(--mono);fo
       <button class="link" onclick="api.open_path('backups')">📁 打开备份文件夹</button>
       <button class="link" onclick="openFeedback()">💬 反馈问题</button>
       <button class="link" onclick="api.open_url('https://github.com/rddmwmddr/android-ad-cleaner')">？使用说明</button>
+      <button class="link newver hide" id="newver"></button>
       <div class="ver" id="ver"></div>
     </div>
   </aside>
@@ -136,6 +140,13 @@ window.addEventListener("pywebviewready", async () => {
   ENV = await api.env();
   $("#ver").textContent = "版本 " + ENV.version;
   showConnect();
+  api.latest_version().then(r => {      // 旧版不会自动更新：有新版就在侧栏提示
+    if (!r || !r.version) return;
+    const b = $("#newver");
+    b.textContent = `有新版本 ${r.version}，点这里下载`;
+    b.onclick = () => api.open_url(r.url);
+    b.classList.remove("hide");
+  }).catch(() => {});
 });
 
 /* ---------- 1 连接 ---------- */
@@ -165,7 +176,7 @@ function showConnect(){
 }
 function renderAdb(){
   $("#adbbox").innerHTML = `<div class="card"><h3>第一次使用：需要 adb 工具</h3>
-    <p class="lead" style="margin:0 0 12px">adb 是 Google 官方的安卓调试工具，用来和手机通信。点下面的按钮从 Google 官网下载（约 10 MB），下载即表示同意 Android SDK 平台工具的使用条款。</p>
+    <p class="lead" style="margin:0 0 12px">adb 是 Google 官方的安卓调试工具，用来和手机通信。点下面的按钮下载（约 10 MB）：先从 Google 官网下，下不了再换腾讯云镜像，下完核对文件校验值。下载即表示同意 Android SDK 平台工具的使用条款。</p>
     <div class="row"><button class="btn" id="dlbtn" onclick="dlAdb()">下载 adb</button><span id="dlmsg" class="lead" style="margin:0"></span></div>
     <div class="bar hide" id="dlbar" style="margin-top:12px"><i style="width:0"></i></div></div>`;
 }
@@ -217,7 +228,7 @@ async function showDetect(){
   const qa = st.quickapps, qaOff = qa.filter(q => q.closed).length;
   const warns = [];
   if (st.locked) warns.push(`<div class="note warn">手机锁屏了。请解锁手机并保持亮屏，然后点「重新检测」。</div>`);
-  if (st.input_blocked) warns.push(`<div class="note bad">电脑发出的点击被手机拒绝了。小米 / Redmi / POCO 要在「开发者选项」里再打开「USB 调试（安全设置）」（需插 SIM 卡、登录小米账号），打开后点「重新检测」。不开它，自动关开关和营销通知都会失败，中途还会锁屏。</div>`);
+  if (st.input_blocked) warns.push(`<div class="note bad">电脑发出的点击被手机拒绝了。小米 / Redmi / POCO 要在「开发者选项」里再打开「USB 调试（安全设置）」（需插 SIM 卡、登录小米账号）。打开时手机会弹出风险提示，等倒计时结束点「确定」，然后点「重新检测」。<br>已经打开了还是这样：拔掉数据线重新插上再检测；还不行就重启手机再检测。不开它，自动关开关和营销通知都会失败，中途还会锁屏。</div>`);
   const foldBlock = st.fold_open && st.steps.length > 0;
   if (st.fold_open) warns.push(foldBlock
     ? `<div class="note warn">这是展开的折叠屏。展开后是左右分栏，自动关 App 开关会找错位置。请合上手机用外屏，然后点「重新检测」。</div>`
@@ -275,7 +286,8 @@ async function showChoose(){
     try {
       const result = await api.chan_scan(S.serial);
       if (result.error){ S.chanError = result.error; S.chanDetail = result.detail || result.error; S.chans = []; }
-      else S.chans = result;
+      // 同一个软件的渠道排在一起；读不到软件名的按包名排在后面
+      else S.chans = result.sort((a, b) => (!a.app - !b.app) || (a.app || a.pkg).localeCompare(b.app || b.pkg, "zh-CN") || a.name.localeCompare(b.name, "zh-CN"));
     } catch(e){ S.chanError = String(e); S.chans = []; }
   }
   renderChans();
@@ -288,7 +300,7 @@ function renderChans(){
   if (S.chanError){ box.innerHTML = `<div class="note bad">通知扫描未完成：${esc(S.chanError)}</div>${errorDetails(S.chanDetail || S.chanError)}<div class="actions"><button class="btn plain" onclick="S.chans=null;showChoose()">重新扫描</button><button class="btn plain" onclick="copyDiagnostics()">复制完整诊断</button></div>`; $("#chancount").textContent = ""; return; }
   if (!S.chans.length){ box.innerHTML = `<p class="lead" style="margin:10px 0 0">未发现已创建且开启的营销候选渠道。新设备或刚重置的设备上，App 可能尚未创建渠道，正常使用后可再次扫描。</p>`; $("#chancount").textContent = ""; return; }
   box.innerHTML = `<div class="row" style="margin-top:10px"><button class="btn plain" onclick="chAll(true)">全选</button><button class="btn plain" onclick="chAll(false)">全不选</button></div>
-    <div class="chan"><table>${S.chans.map((c, k) => `<tr><td style="width:28px"><input type="checkbox" class="ch" data-k="${k}" ${c.checked ? "checked" : ""} onchange="S.chans[${k}].checked=this.checked;chCount()"></td><td>${esc(c.name)}</td><td class="pkg">${esc(c.pkg)}</td></tr>`).join("")}</table></div>`;
+    <div class="chan"><table><tr><th></th><th>软件</th><th>通知类别</th></tr>${S.chans.map((c, k) => `<tr><td style="width:28px"><input type="checkbox" class="ch" data-k="${k}" ${c.checked ? "checked" : ""} onchange="S.chans[${k}].checked=this.checked;chCount()"></td><td class="${c.app ? "appname" : "pkg"}" title="${esc(c.pkg)}">${esc(c.app || c.pkg)}</td><td>${esc(c.name)}</td></tr>`).join("")}</table></div>`;
   chCount();
 }
 function chAll(v){ S.chans.forEach(c => c.checked = v); renderChans(); }
@@ -333,11 +345,12 @@ async function go(){
 }
 function showRun(){
   setStep(4);
-  main().innerHTML = `<h1>执行</h1><p class="lead">请不要碰手机。脚本在手机上点按，你一碰就会乱。</p>
+  main().innerHTML = `<h1>执行</h1><p class="lead">请不要碰手机。脚本在手机上点按，你一碰就会乱。需要用手机时先点「暂停」，等提示已暂停再拿起手机。</p>
     <div class="card"><div class="row" style="justify-content:space-between"><b id="jt">准备中……</b><span id="js" class="lead" style="margin:0"></span></div>
     <div class="bar" style="margin-top:10px"><i id="jb" style="width:0"></i></div>
+    <div id="pausenote" class="note hide" style="margin-top:12px"></div>
     <div class="log" id="log"></div>
-    <div class="actions"><button class="btn plain" id="stopbtn" onclick="api.stop()">停止</button></div></div>`;
+    <div class="actions"><button class="btn plain" id="stopbtn" onclick="api.stop()">停止</button><button class="btn plain" id="pausebtn" onclick="togglePause()">暂停</button></div></div>`;
   pollJob = setInterval(tick, 500);
 }
 async function tick(){
@@ -347,7 +360,24 @@ async function tick(){
   if (log && r.lines.length){ log.textContent += r.lines.join("\n") + "\n"; log.scrollTop = log.scrollHeight; }
   if ($("#jt")){ $("#jt").textContent = r.title ? `第 ${r.idx} / ${r.total} 步：${r.title}` : "准备中……";
     $("#js").textContent = `已用 ${r.sec} 秒`; $("#jb").style.width = (r.total ? (r.idx - (r.running ? 0.5 : 0)) / r.total * 100 : 0) + "%"; }
+  showPause(r);
   if (!r.running && r.results && r.results.length){ clearInterval(pollJob); showDone(r); }
+}
+// 暂停在安全的位置生效：一个渠道、机型脚本的一段或一个步骤做完之后。生效前脚本还在点，不能碰手机
+function showPause(r){
+  const b = $("#pausebtn"), n = $("#pausenote"); if (!b || !n) return;
+  S.pause = !!r.pause;
+  b.textContent = S.pause ? "继续" : "暂停";
+  b.disabled = !r.running || r.cancel;
+  n.classList.toggle("hide", !S.pause);
+  n.classList.toggle("warn", S.pause && !r.paused);
+  n.classList.toggle("ok", S.pause && !!r.paused);
+  n.textContent = r.paused ? "已暂停：现在可以操作手机。操作完回到桌面、保持解锁，再点「继续」。"
+    : "正在暂停：等手头这一项做完（最多一两分钟），先别碰手机。";
+}
+async function togglePause(){
+  $("#pausebtn").disabled = true;           // 0.5 秒内 tick 按后台状态刷新按钮
+  if (S.pause) await api.resume(); else await api.pause();
 }
 
 /* ---------- 5 完成 ---------- */
@@ -364,14 +394,15 @@ function summarize(res){
 function showDone(r){
   setStep(5);
   const ok = r.results.every(x => x.rc === 0) && !r.cancel;
+  const failed = r.results.some(x => x.rc !== 0 && !x.stopped);   // 点了停止不算出错，不提示上报
   if (!r.results.length){ r.results = []; }
-  main().innerHTML = `<h1>${ok ? "完成" : "已结束（有步骤没成功）"}</h1><p class="lead">用时 ${r.sec} 秒。去下拉搜索、负一屏、应用商店、浏览器看一眼，确认功能正常。</p>
-    <div class="card ${r.results.length ? "" : "hide"}">${r.results.map(x => `<div class="res"><span class="tag ${x.rc === 0 ? "ok" : "bad"}">${x.skipped ? "跳过" : x.rc === 0 ? "成功" : "失败"}</span><span class="t">${esc(x.title)}</span><span class="d">${esc(summarize(x))} · ${x.sec} 秒</span></div>`).join("")}</div>
+  main().innerHTML = `<h1>${ok ? "完成" : failed ? "已结束（有步骤没成功）" : "已停止"}</h1><p class="lead">用时 ${r.sec} 秒。去下拉搜索、负一屏、应用商店、浏览器看一眼，确认功能正常。</p>
+    <div class="card ${r.results.length ? "" : "hide"}">${r.results.map(x => `<div class="res"><span class="tag ${x.rc === 0 ? "ok" : x.stopped ? "warn" : "bad"}">${x.skipped ? "跳过" : x.stopped ? "已停止" : x.rc === 0 ? "成功" : "失败"}</span><span class="t">${esc(x.title)}</span><span class="d">${esc(summarize(x))} · ${x.sec} 秒</span></div>`).join("")}</div>
     ${r.recovery ? `<div class="card" id="ui-recovery"><h3>排查读屏连接</h3><p class="lead">${esc(r.recovery)}</p><div class="actions"><button class="btn plain" onclick="checkUi()">检查读屏连接</button><button class="btn plain" onclick="copyDiagnostics()">复制完整诊断</button></div></div>` : ""}
     <div class="card"><h3>最后一步：关闭开发者模式</h3>
-      <p class="lead" style="margin:0 0 12px">${ok ? "核对结果后，若不再使用电脑调试，建议关闭开发者模式和 USB 调试。" : "有步骤未成功；若还要排查或重试，请先保留 USB 调试。结束排查后再关闭。"}部分银行、支付、游戏 App 检测到它开着会提醒或拒绝运行。<br>关掉<b>不会撤销</b>已经成功的改动。</p>
+      <p class="lead" style="margin:0 0 12px">${failed ? "有步骤未成功；若还要排查或重试，请先保留 USB 调试。结束排查后再关闭。" : "核对结果后，若不再使用电脑调试，建议关闭开发者模式和 USB 调试。"}部分银行、支付、游戏 App 检测到它开着会提醒或拒绝运行。<br>关掉<b>不会撤销</b>已经成功的改动。</p>
       <div class="row"><button class="btn" onclick="askDevOff()">帮我关闭</button><button class="btn plain" onclick="selfOff()">我在手机上自己关</button></div></div>
-    ${ok ? "" : `<div class="note bad">有步骤没成功。<a href="#" onclick="openReport();return false">上报错误日志</a>（不需要账号，发送前可以看到全部内容），或<a href="#" onclick="openFeedback('bug');return false">到 GitHub 反馈</a>。</div>`}
+    ${failed ? `<div class="note bad">有步骤没成功。<a href="#" onclick="openReport();return false">上报错误日志</a>（不需要账号，发送前可以看到全部内容），或<a href="#" onclick="openFeedback('bug');return false">到 GitHub 反馈</a>。</div>` : ""}
     <details class="card"><summary>查看完整日志</summary><div class="log" style="height:260px">${esc(document.querySelector("#log")?.textContent || "")}</div></details>`;
 }
 function askDevOff(){
@@ -406,6 +437,12 @@ async function openFeedback(type){
 /* ---------- 错误日志上报：先预览全部内容，确认后发送 ---------- */
 async function openReport(){
   S.report = await api.report_payload();
+  if (!S.report.steps.length && !S.report.log.trim()){   // 没执行过：只有手机型号，看不出问题（10-28 六份空报告）
+    modal(`<h3>上报错误日志</h3><p class="lead">还没有执行记录，这份报告只有手机型号，看不出问题。请先执行一次再上报。</p>
+      <p class="lead" style="margin:0">还没执行就遇到问题（连不上手机、检测不出机型、扫描不出通知），请到 GitHub 反馈，写清楚卡在哪一步。</p>
+      <div class="actions"><button class="btn plain" onclick="closeModal()">关闭</button><button class="btn" onclick="openFeedback('bug')">到 GitHub 反馈</button></div>`);
+    return;
+  }
   modal(`<h3>上报错误日志</h3>
     <p class="lead" style="margin:0">发送到项目服务器 supabase.ahuamiao.com，用来定位问题。下面是要发送的全部内容：手机序列号、电脑用户名、邮箱、手机号、IP 已替换，不含应用列表、通知内容和账号信息。服务器保存 90 天，IP 只存不可还原的哈希。</p>
     <pre class="report">${esc(JSON.stringify(S.report, null, 2))}</pre>

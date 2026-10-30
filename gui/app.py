@@ -5,11 +5,11 @@
 后台：tool/run.py、tool/fast.py、tool/chan_fast.py，以子进程运行，日志实时回传界面。
 打包后没有独立的 Python，子进程用「本程序 --cli 脚本名 参数…」的方式启动。
 """
-import json, os, platform, re, runpy, shutil, subprocess, sys, threading, time, urllib.error, urllib.request, uuid, zipfile
+import hashlib, json, os, platform, re, runpy, shutil, subprocess, sys, threading, time, urllib.error, urllib.request, uuid, zipfile
 from pathlib import Path
 
 APP_NAME = "安卓去广告"
-VERSION = "0.2.6"
+VERSION = "0.2.7"
 FROZEN = getattr(sys, "frozen", False)
 BASE = getattr(sys, "_MEIPASS", os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 TOOL = os.path.join(BASE, "tool")
@@ -67,7 +67,17 @@ def cli_main():
 
 
 # ---------- adb ----------
-ADB_URL = {
+# adb 下载（#273：从 Google 下载失败）。固定版本先从官网、再从腾讯云镜像下，都核对 SHA-256；
+# 校验值按 Google 官方清单 repository2-3.xml 的 SHA-1 核过（2026-10-29，两处文件一致）。都失败再从官网下最新版。
+ADB_VERSION = "37.0.1"
+ADB_PINNED = {
+    "Windows": ("platform-tools_r37.0.1-win.zip", "45f4d63113e895ebde0c90f194099a4676b6ac653bd28d54314a9e022bbc1a99"),
+    "Darwin": ("platform-tools_r37.0.1-darwin.zip", "ee39ad5967e95c2a07f04dbcbde96b1a0c916ba376096db5d2f498b7727a5d1d"),
+    "Linux": ("platform-tools_r37.0.1-linux.zip", "d230f13842f60f782a8645f9c813f8f845bf36089ea7289f28c48f17979313f1"),
+}
+ADB_MIRRORS = (("Google 官网", "https://dl.google.com/android/repository/"),
+               ("腾讯云镜像", "https://mirrors.cloud.tencent.com/AndroidSDK/"))
+ADB_LATEST = {
     "Darwin": "https://dl.google.com/android/repository/platform-tools-latest-darwin.zip",
     "Windows": "https://dl.google.com/android/repository/platform-tools-latest-windows.zip",
     "Linux": "https://dl.google.com/android/repository/platform-tools-latest-linux.zip",
@@ -109,6 +119,33 @@ def adb_present(adb, serial):
     except (OSError, subprocess.TimeoutExpired):
         return False
     return out.strip() == "device"
+
+
+CHIME_GAP = 3       # 秒：几件事挤在一起时只响一次
+_last_chime = [0.0]
+
+
+def chime():
+    """提示音（gui/web/chime.wav，两个柔和的音，不到 1 秒，由 gui/make_chime.py 生成）：
+    执行结束、暂停生效、手机锁屏要解锁时各响一次。放不出来就算了，不影响执行。"""
+    now = time.time()
+    if os.environ.get("AAC_NO_SOUND") or now - _last_chime[0] < CHIME_GAP:
+        return                          # AAC_NO_SOUND：回归测试不出声
+    _last_chime[0] = now
+    path = os.path.join(BASE, "gui", "web", "chime.wav")
+    try:
+        if IS_WIN:
+            import winsound
+            winsound.PlaySound(path, winsound.SND_FILENAME | winsound.SND_ASYNC | winsound.SND_NODEFAULT)
+        elif platform.system() == "Darwin":
+            subprocess.Popen(["afplay", path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception:
+        pass
+
+
+def pause_file():
+    """客户端点「暂停」时创建、点「继续」时删掉；引擎在安全的位置看它（fast.pause_point）。"""
+    return os.path.join(DATA, "pause")
 
 
 def child_env(adb):
@@ -241,6 +278,12 @@ def win_clipboard(text):
 # 错误日志上报：用户预览并确认后发送；说明见 docs/12-错误日志上报.md
 REPORT_URL = "https://supabase.ahuamiao.com/functions/v1/aac-report"
 REPORT_LIMIT = 3            # 每小时最多上报几次（服务器另有按 IP / 安装编号 / 全站的配额）
+# 新版本提示：先查官网的版本文件（国内能访问），再查 GitHub。只取版本号，请求里不带手机、电脑信息。
+LATEST_URLS = ("https://ahuamiao.com/sites/other/android-ad-cleaner-latest.json",
+               "https://api.github.com/repos/rddmwmddr/android-ad-cleaner/releases/latest")
+DOWNLOAD_PAGE = "https://ahuamiao.com/sites/other/android-ad-removal-intro.html"
+# 没执行过任何步骤时只有手机型号，看不出问题（错误日志 10-28：6 份空报告）
+EMPTY_REPORT = "还没有执行记录，这份报告只有手机型号，看不出问题。请先执行一次再上报；还没执行就遇到问题，请到 GitHub 反馈，写清楚卡在哪一步。"
 PRIVATE = (
     (re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}"), "<邮箱>"),
     (re.compile(r"(?<!\d)1[3-9]\d{9}(?!\d)"), "<手机号>"),
@@ -280,6 +323,24 @@ class Api:
         return {"adb": self.adb, "data": DATA, "version": VERSION, "os": platform.system(),
                 "images": [f for f in sorted(os.listdir(os.path.join(BASE, "images"))) if f.startswith("dev-")]}
 
+    def latest_version(self):
+        """有新版时返回 {version, url}，没有或查不到返回 {}。旧版不会自动更新：0.2.6 发布后，
+        旧版又报了 21 份新版已经修好的问题（错误日志 10-28）。"""
+        current = version_key(VERSION)
+        for url in LATEST_URLS:
+            try:
+                request = urllib.request.Request(url, headers={"User-Agent": f"AndroidAdCleaner/{VERSION}",
+                                                               "Accept": "application/json"})
+                with urllib.request.urlopen(request, timeout=6) as response:
+                    data = json.loads(response.read(65536).decode("utf-8"))
+                latest = str(data.get("version") or data.get("tag_name") or "")
+            except Exception:
+                continue
+            if not version_key(latest):
+                continue
+            return {"version": latest.lstrip("v"), "url": DOWNLOAD_PAGE} if version_key(latest) > current else {}
+        return {}
+
     def _run(self, script, *args, timeout=180):
         r = subprocess.run(cmd_for(script, *args), capture_output=True, text=True, encoding="utf-8",
                            errors="replace", env=child_env(self.adb), timeout=timeout, creationflags=NOWIN)
@@ -296,20 +357,40 @@ class Api:
             return
         threading.Thread(target=self._download, daemon=True).start()
 
+    def adb_sources(self):
+        """[(来源名, 网址, sha256 或 None)]：固定版本两处，最后是官网最新版。"""
+        name, digest = ADB_PINNED[platform.system()]
+        return [(label, base + name, digest) for label, base in ADB_MIRRORS] + \
+               [("Google 官网（最新版）", ADB_LATEST[platform.system()], None)]
+
+    def _fetch(self, label, url, digest, zp):
+        self.dl = {"state": "running", "pct": 0, "msg": f"正在从{label}下载 platform-tools……"}
+        h = hashlib.sha256()
+        request = urllib.request.Request(url, headers={"User-Agent": f"AndroidAdCleaner/{VERSION}"})
+        with urllib.request.urlopen(request, timeout=20) as r, open(zp, "wb") as f:
+            total = int(r.headers.get("Content-Length") or 0); got = 0
+            while True:
+                b = r.read(65536)
+                if not b:
+                    break
+                f.write(b); h.update(b); got += len(b)
+                if total:
+                    self.dl["pct"] = int(got * 100 / total)
+        if digest and h.hexdigest() != digest:
+            raise ValueError("文件校验不对，可能下载不完整或被改动")
+
     def _download(self):
-        self.dl = {"state": "running", "pct": 0, "msg": "正在从 Google 官网下载 platform-tools……"}
+        zp = os.path.join(DATA, "platform-tools.zip")
+        errors = []
         try:
-            url = ADB_URL[platform.system()]
-            zp = os.path.join(DATA, "platform-tools.zip")
-            with urllib.request.urlopen(url, timeout=30) as r, open(zp, "wb") as f:
-                total = int(r.headers.get("Content-Length") or 0); got = 0
-                while True:
-                    b = r.read(65536)
-                    if not b:
-                        break
-                    f.write(b); got += len(b)
-                    if total:
-                        self.dl["pct"] = int(got * 100 / total)
+            for label, url, digest in self.adb_sources():
+                try:
+                    self._fetch(label, url, digest, zp)
+                    break
+                except Exception as e:
+                    errors.append(f"{label}：{e}")
+            else:
+                raise RuntimeError("；".join(errors))
             with zipfile.ZipFile(zp) as z:
                 z.extractall(DATA)
             os.remove(zp)
@@ -320,6 +401,10 @@ class Api:
             self.dl = {"state": "done", "pct": 100, "msg": "adb 已就绪"}
         except Exception as e:
             self.dl = {"state": "error", "pct": 0, "msg": f"下载失败：{e}"}
+            try:
+                os.remove(zp)
+            except OSError:
+                pass
 
     def download_state(self):
         return self.dl
@@ -381,6 +466,7 @@ class Api:
                 if protected_channel(parts[2], parts[1]):
                     continue  # 旧扫描结果也不能经「全选」把功能通知勾回去
                 rows.append({"pkg": parts[0], "id": parts[1], "name": parts[2],
+                             "app": parts[3].strip() if len(parts) > 3 else "",   # 手机上显示的应用名，读不到为空
                              "checked": not SERVICE.search(line)})
         return rows
 
@@ -449,7 +535,15 @@ class Api:
         return {"ok": True, "total": len(tasks)}
 
     def _log(self, s):
-        self.job["lines"].append(s.rstrip("\n"))
+        s = s.rstrip("\n")
+        if s.startswith("⏸ 已暂停"):
+            self.job["paused"] = True
+            chime()                     # 可以拿手机了
+        elif "手机锁屏了：请解锁手机" in s:
+            chime()                     # 要机主来解锁
+        elif s.startswith("▶ 继续执行"):
+            self.job["paused"] = False
+        self.job["lines"].append(s)
 
     def _latest_backup(self, model):
         try:
@@ -461,9 +555,17 @@ class Api:
     def _work(self, tasks):
         j = self.job
         ui_busy = False
+        self.resume()                   # 上次没清掉的暂停标记不能带进这次
         for i, (title, script, args) in enumerate(tasks):
-            if j["cancel"]:
-                break
+            if j.get("pause") and not j["cancel"]:
+                # 步骤之间的暂停；步骤里面的暂停由引擎在段与段、渠道与渠道之间处理
+                self._log("⏸ 已暂停：现在可以操作手机。操作完回到桌面、保持解锁，再点「继续」")
+                while j.get("pause") and not j["cancel"]:
+                    time.sleep(0.5)
+                if not j["cancel"]:
+                    self._log("▶ 继续执行")
+            if j["cancel"] and title != "收尾":
+                continue                # 停止后仍跑收尾：改回插电常亮（以前停止会让手机一直亮着）
             j["idx"], j["title"] = i + 1, title
             self._log(f"\n▶ {title}")
             needs_ui = script == "@channels" or (script == "run.py" and len(args) > 2 and args[2] == "recipe")
@@ -479,13 +581,15 @@ class Api:
                 os.makedirs(d, exist_ok=True)
                 fn = os.path.join(d, "channels.tsv")
                 with open(fn, "w", encoding="utf-8") as f:
-                    f.write("# 包名\t渠道id\t渠道名（客户端勾选）\n")
+                    f.write("# 包名\t渠道id\t渠道名\t应用名（客户端勾选）\n")
                     for c in args:
-                        f.write(f"{c['pkg']}\t{c['id']}\t{c['name']}\n")
+                        app = re.sub(r"[\t\r\n]+", " ", str(c.get("app") or "")).strip()
+                        f.write(f"{c['pkg']}\t{c['id']}\t{c['name']}\t{app}\n")
                 script, args = "chan_fast.py", ["-s", j["serial"], "off", fn]
             try:
+                env = dict(child_env(self.adb), AAC_PAUSE_FILE=pause_file())
                 p = subprocess.Popen(cmd_for(script, *args), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                     text=True, encoding="utf-8", errors="replace", env=child_env(self.adb),
+                                     text=True, encoding="utf-8", errors="replace", env=env,
                                      creationflags=NOWIN, bufsize=1)
                 j["proc"] = p
                 tail = []
@@ -495,6 +599,10 @@ class Api:
             except Exception as e:
                 rc, tail = -1, [str(e)]
                 self._log(f"✗ {e}")
+            if rc and j["cancel"] and title != "收尾":
+                # 用户点了停止：不是出错，不记诊断、不提示上报（错误日志 10-28：4 份是停止后上报的）
+                j["results"].append({"title": title, "rc": rc, "stopped": True, "sec": round(time.time() - t), "tail": tail})
+                continue
             j["results"].append({"title": title, "rc": rc, "sec": round(time.time() - t), "tail": tail})
             if rc:
                 detail = "\n".join(j["lines"][line_start:])
@@ -510,6 +618,9 @@ class Api:
                 error = self._remember_error(title, j["serial"], detail)
                 if error.get("recovery"):
                     j["recovery"] = error["recovery"]
+        self.resume()
+        if not j["cancel"]:
+            chime()                     # 执行结束（成功或有步骤没成功都响，提醒回来看结果）
         j["running"] = False
         j["proc"] = None
         self._log(f"\n执行结束，用时 {round(time.time() - j['t0'])} 秒" if not j["cancel"] else "\n已停止")
@@ -521,14 +632,35 @@ class Api:
         lines = j["lines"][since:]
         return {"running": j["running"], "lines": lines, "next": since + len(lines), "idx": j["idx"],
                 "total": j["total"], "title": j["title"], "results": j["results"] if not j["running"] else [],
-                "sec": round(time.time() - j["t0"]), "cancel": j["cancel"], "recovery": j.get("recovery", "")}
+                "sec": round(time.time() - j["t0"]), "cancel": j["cancel"], "recovery": j.get("recovery", ""),
+                "pause": j.get("pause", False), "paused": j.get("paused", False)}
 
     def stop(self):
         if self.job and self.job["running"]:
             self.job["cancel"] = True
+            self.resume()
             p = self.job.get("proc")
             if p:
                 p.terminate()
+        return True
+
+    def pause(self):
+        """执行中需要操作手机时用：引擎做完手头这一项（一个渠道、机型脚本的一段、一个步骤）就停下等待。"""
+        j = self.job
+        if not j or not j["running"] or j["cancel"]:
+            return False
+        os.makedirs(DATA, exist_ok=True)
+        Path(pause_file()).write_text("", encoding="utf-8")
+        j["pause"] = True
+        return True
+
+    def resume(self):
+        if self.job:
+            self.job["pause"] = False
+        try:
+            os.remove(pause_file())
+        except OSError:
+            pass
         return True
 
     # ----- 收尾 / 还原 -----
@@ -613,7 +745,7 @@ class Api:
         if self.last_error:
             log += f"\n\n[最近失败：{self.last_error['operation']}]\n{self.last_error['detail']}"
         steps = [{"title": scrub(r["title"])[:40], "sec": int(r.get("sec") or 0),
-                  "result": "跳过" if r.get("skipped") else ("成功" if r["rc"] == 0 else "失败")}
+                  "result": "跳过" if r.get("skipped") else "已停止" if r.get("stopped") else ("成功" if r["rc"] == 0 else "失败")}
                  for r in j.get("results", [])][:12]
         return {
             "client_version": VERSION,
@@ -646,6 +778,8 @@ class Api:
             return {"error": f"一小时内最多上报 {REPORT_LIMIT} 次，请稍后再试"}
         if not isinstance(payload, dict):
             return {"error": "上报内容格式不对"}
+        if not payload.get("steps") and not str(payload.get("log") or "").strip():
+            return {"error": EMPTY_REPORT}
         body = dict(payload, install_id=self._install_id())
         request = urllib.request.Request(
             REPORT_URL, data=json.dumps(body, ensure_ascii=False).encode("utf-8"), method="POST",
@@ -693,6 +827,11 @@ class Api:
         """网址里的中文先转成 %XX：macOS 经 AppleScript、Windows 经 shell 打开中文网址会出错。"""
         import webbrowser, urllib.parse
         webbrowser.open(urllib.parse.quote(url, safe=":/?#[]@!$&'()*+,;=%~"))
+
+
+def version_key(text):
+    m = re.match(r"v?(\d+)\.(\d+)\.(\d+)$", (text or "").strip())
+    return tuple(map(int, m.groups())) if m else ()
 
 
 def smoke_gui(window, result):

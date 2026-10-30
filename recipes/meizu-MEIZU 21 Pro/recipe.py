@@ -1,5 +1,5 @@
 # 魅族 21 Pro（MEIZU 21 Pro，Flyme 12.6.0.0A / Android 16）。
-# 2026-10-29 手动逐页确认路径；本脚本整段尚未真机重跑。
+# 2026-10-30 真机重跑：手机管家个性化推荐入口未通过，其余目标已读到关闭。
 # 不处理通知渠道、快应用或广告包；不修改服务类通知和负一屏卡片。
 BUILD = "Flyme 12.6.0.0A"
 MODELS = ["MEIZU 21 Pro"]
@@ -180,7 +180,7 @@ def close_named(names, page, activity):
 @step("系统跟踪")
 def _():
     p.d.shell("am start --windowingMode 1 -f 0x10008000 -a android.settings.SETTINGS")
-    wait_page("com.android.settings/com.android.settings.Settings", "我的手机")
+    wait_page("com.android.settings/com.android.settings.homepage.SettingsHomepageActivity", "我的手机")
     goto("权限和隐私", "com.meizu.safe/com.meizu.safe.ui.permission.PermissionMainActivity", "权限和隐私", 8)
     goto("应用跟踪控制", "com.flyme.secureservice/com.flyme.secureservice.openid.ui.OAIDSettingsActivity", "应用跟踪控制", 6)
     close_named(["允许应用跟踪"], "系统·应用跟踪", p.focus())
@@ -271,7 +271,7 @@ def _():
 @step("手机管家")
 def _():
     p.d.shell("am start --windowingMode 1 -f 0x10008000 -a android.settings.SETTINGS")
-    wait_page("com.android.settings/com.android.settings.Settings", "我的手机")
+    wait_page("com.android.settings/com.android.settings.homepage.SettingsHomepageActivity", "我的手机")
     main = "com.meizu.safe/com.meizu.safe.SecurityMainActivity"
     settings = "com.meizu.safe/com.meizu.safe.MainSettingsActivity"
     recommend = "com.meizu.safe/com.meizu.safe.PersonalizedSettingsActivity"
@@ -296,4 +296,4 @@ def _():
 
 
 print(f"\n已调整 {len(p.changed)} 项；未完成步骤 {len(FAILED_STEPS)} 个。", flush=True)
-print("通知渠道、广告包、快应用按标准流程另行处理；整段脚本仍待真机验证。", flush=True)
+print("通知渠道、广告包、快应用按标准流程另行处理。", flush=True)
