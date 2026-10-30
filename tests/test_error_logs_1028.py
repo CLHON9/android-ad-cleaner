@@ -49,6 +49,7 @@ class KeyguardTests(unittest.TestCase):
 
     def test_engine_collapses_shade_when_not_locked(self):
         p = fast.Phone.__new__(fast.Phone)
+        p.link = fast.adb_link.Connection("test")
         p.d = Mock()
         p.d.shell.side_effect = [out(SHADE + "      mIsShowing=false\n"), out(""),
                                  out(SETTINGS + "      mIsShowing=false\n")]
@@ -58,6 +59,7 @@ class KeyguardTests(unittest.TestCase):
 
     def test_engine_lock_screen_stays_locked_after_collapse(self):
         p = fast.Phone.__new__(fast.Phone)
+        p.link = fast.adb_link.Connection("test")
         p.d = Mock()
         p.d.shell.side_effect = [out(SHADE), out(""), out(SHADE)]
         with patch.object(fast.time, "sleep"):
@@ -73,6 +75,7 @@ class KeyguardTests(unittest.TestCase):
 class WaitUnlockedTests(unittest.TestCase):
     def phone(self, states):
         p = fast.Phone.__new__(fast.Phone)
+        p.link = fast.adb_link.Connection("test")
         p.d = Mock()
         p.locked = Mock(side_effect=states)
         return p
@@ -102,6 +105,7 @@ class FocusTests(unittest.TestCase):
     def test_trailing_brace_is_not_part_of_the_activity(self):
         # vivo OriginOS 3 / Android 13：焦点行以「Activity}}」结尾，以前取到「…Activity}」，渠道页全部认不出
         p = fast.Phone.__new__(fast.Phone)
+        p.link = fast.adb_link.Connection("test")
         p.d = Mock()
         name = "com.vivo.systemuiplugin/com.vivo.systemui.statusbar.notification.settings.channels.NotificationSettingsActivity"
         p.d.shell.return_value = out(f"  mCurrentFocus=Window{{4c2 u0 {name}}}}}\n")
@@ -195,8 +199,9 @@ class DisconnectTests(unittest.TestCase):
 
     def test_empty_shell_reply_waits_for_device_then_retries(self):
         p = fast.Phone.__new__(fast.Phone)
-        p.serial, p.lost = "test", False
         p._shell = Mock(side_effect=[fast.u2.exceptions.AdbShellError("shell output invalid", "getprop x", b""), out("ok")])
+        p.link = fast.adb_link.Connection("test", transport=fast._shell_transport(p._shell), lost_on_retry=False)
+        p.serial, p.lost = "test", False
         with patch.object(adb_link, "wait_for", return_value=True):
             self.assertEqual(p._resilient_shell("getprop x").output, "ok")
 
@@ -228,6 +233,7 @@ class ListRowTests(unittest.TestCase):
 
     def phone(self):
         p = fast.Phone.__new__(fast.Phone)
+        p.link = fast.adb_link.Connection("test")
         p.W, p.H, p.log = 1080, 2340, False
         p.d = Mock()
         p.locked = Mock(return_value=False)

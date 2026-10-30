@@ -70,6 +70,19 @@ def want_state(title):
     return False
 
 
+def _shell_transport(shell):
+    """读屏库的 shell 当传输。断线只有它认得出来（异常类型加错误串），判定留在这一层。"""
+    def send(command, timeout=None):
+        try:
+            return shell(command) if timeout is None else shell(command, timeout=timeout)
+        except Exception as e:
+            # 「shell output invalid … b''」：命令没有任何回应，连接正在断开（错误日志 10-27）。
+            if adb_link.lib_gone(str(e)) or (isinstance(e, u2.exceptions.AdbShellError) and "output invalid" in str(e)):
+                raise adb_link.LinkBroken(e) from e
+            raise
+    return send
+
+
 class Phone:
     def __init__(self, serial, log=True):
         if log:
@@ -93,8 +106,9 @@ class Phone:
             raise RuntimeError("读屏服务没能装到手机上（adb 传文件失败），本次未点击开关。请拔插数据线、"
                                "退出电脑上的手机助手类软件后重试；仍失败请重启手机。"
                                f"\n原始异常：{type(e).__name__}: {str(e)[:200]}") from e
-        self.serial, self.lost = serial, False
-        self._shell, self.d.shell = self.d.shell, self._resilient_shell
+        self._shell = self.d.shell
+        self.link = adb_link.Connection(serial, transport=_shell_transport(self._shell), lost_on_retry=False)
+        self.d.shell = self._resilient_shell
         try:
             self.d.settings["operation_delay"] = (0, 0)
             self.W, self.H = self.d.window_size()
@@ -109,26 +123,33 @@ class Phone:
         self.changed = []          # (页面, 标题) 记录本次关掉的
         self.miss = 0              # 本段已经没找到几次；>0 说明路径对不上，后面只看当前屏、不再翻页找
 
+    @property
+    def serial(self):
+        """串号归 Connection：每条命令都要带 -s，不存在「手机对象认一台、命令发给另一台」。"""
+        return self.link.serial
+
+    @serial.setter
+    def serial(self, value):
+        self.link.serial = value
+
+    @property
+    def lost(self):
+        """本轮是否已确认断线；状态归 Connection，这里只是读写它的一个别名。"""
+        return self.link.lost
+
+    @lost.setter
+    def lost(self, value):
+        if value:
+            self.link.mark_lost()
+
     def _resilient_shell(self, *args, **kwargs):
         """手机短暂掉线（另一个 adb 服务重启、接口抖动）等它回来重试一次；仍不在就整段停下。"""
-        if self.lost:
-            raise adb_link.DeviceLost(adb_link.REPEAT)
-        try:
-            return self._shell(*args, **kwargs)
-        except Exception as e:
-            # 「shell output invalid … b''」：命令没有任何回应，连接正在断开（错误日志 10-27）。
-            if not (adb_link.lib_gone(str(e)) or (isinstance(e, u2.exceptions.AdbShellError) and "output invalid" in str(e))):
-                raise
-            if not adb_link.wait_for(self.serial):
-                self.lost = True
-                raise adb_link.lost(str(e)) from e
-            return self._shell(*args, **kwargs)
+        return self.link.shell(*args, **kwargs)
 
     def check_alive(self):
         """本轮已确认断线：本段立刻停下，不再读屏、不再逐段重试（#293）。
         排查说明由第一次报错给出，后面的段只报这一句。"""
-        if getattr(self, "lost", False):
-            raise adb_link.DeviceLost(adb_link.REPEAT)
+        self.link.check_alive()
 
     def _u2(self, fn, *a, **k):
         """u2 直连的调用（dump_hierarchy、window_size、app_stop）不走 shell；

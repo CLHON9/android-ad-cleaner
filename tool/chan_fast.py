@@ -7,9 +7,8 @@
   chan_fast.py -s SERIAL on  清单.tsv      还原
 清单.tsv：包名<TAB>渠道id<TAB>说明[<TAB>应用名]，一行一个；# 开头是注释。
 """
-import re, shlex, sys, time, os, subprocess
+import re, shlex, sys, time, os
 from dataclasses import dataclass
-from types import SimpleNamespace
 for _st in (sys.stdout, sys.stderr):
     try:
         _st.reconfigure(encoding="utf-8", errors="replace")   # Windows 控制台默认不是 UTF-8
@@ -24,30 +23,20 @@ import adb_link
 import wait
 
 
-class ShellPhone:
+class ShellPhone(adb_link.Connection):
     """扫描和复查只读 adb，不启动手机端 UiAutomation。"""
     def __init__(self, serial):
-        self.serial, self.d = serial, self
+        super().__init__(serial, sticky=False)          # 一个 reader 跑一整批：一次掉线不该毒掉后面的读取
+        self.d = self
 
     def shell(self, command, timeout=60):
-        from run import ADB
-        for attempt in range(2):
-            result = subprocess.run([ADB, "-s", self.serial, "shell", command], capture_output=True,
-                                    text=True, encoding="utf-8", errors="replace", timeout=timeout,
-                                    creationflags=0x08000000 if os.name == "nt" else 0)
-            if not (result.returncode and adb_link.client_gone(result.stderr)):
-                break
-            if attempt or not adb_link.wait_for(self.serial, ADB):
-                raise adb_link.lost(result.stderr)
+        result = super().shell(command, timeout=timeout)
         if result.returncode:
             raise RuntimeError("adb 读取失败：" + (result.stderr or result.stdout).strip())
-        return SimpleNamespace(output=result.stdout)
+        return result
 
     def push(self, local, remote, timeout=30):
-        from run import ADB
-        result = subprocess.run([ADB, "-s", self.serial, "push", local, remote], capture_output=True, text=True,
-                                encoding="utf-8", errors="replace", timeout=timeout,
-                                creationflags=0x08000000 if os.name == "nt" else 0)
+        result = super().push(local, remote, timeout=timeout)
         if result.returncode:
             raise RuntimeError("adb 传文件失败：" + (result.stderr or result.stdout).strip())
 

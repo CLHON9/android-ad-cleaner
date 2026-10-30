@@ -30,7 +30,7 @@ class ReadOnlyTests(unittest.TestCase):
     def invoke(self, args, output):
         result = SimpleNamespace(returncode=0, stdout=output, stderr="")
         with patch.object(fast, "connect", side_effect=AssertionError("只读操作不应启动 UiAutomation")) as connect, \
-             patch.object(chan.subprocess, "run", return_value=result) as shell, \
+             patch.object(subprocess, "run", return_value=result) as shell, \
              patch.object(chan, "app_labels", return_value={}), \
              patch.object(sys, "argv", ["chan_fast.py", "-s", "test-device", *args]), \
              contextlib.redirect_stdout(io.StringIO()) as log:
@@ -58,7 +58,7 @@ class ReadOnlyTests(unittest.TestCase):
 
     def test_missing_list_fails_before_device_access(self):
         with tempfile.TemporaryDirectory() as directory, patch.object(fast, "connect") as connect, \
-             patch.object(chan.subprocess, "run") as shell, \
+             patch.object(subprocess, "run") as shell, \
              patch.object(sys, "argv", ["chan_fast.py", "-s", "test", "off", str(Path(directory, "missing.tsv"))]):
             with self.assertRaises(FileNotFoundError):
                 chan.main()
@@ -81,12 +81,12 @@ class ReadOnlyTests(unittest.TestCase):
 
     def test_adb_failure_is_not_empty_success(self):
         result = SimpleNamespace(returncode=1, stdout="", stderr="device unauthorized")
-        with patch.object(chan.subprocess, "run", return_value=result):
+        with patch.object(subprocess, "run", return_value=result):
             with self.assertRaisesRegex(RuntimeError, "unauthorized"):
                 chan.parse(chan.ShellPhone("test"))
 
     def test_shell_call_has_serial_utf8_and_timeout(self):
-        with patch.object(chan.subprocess, "run", return_value=SimpleNamespace(returncode=0, stdout=dump(), stderr="")) as shell:
+        with patch.object(subprocess, "run", return_value=SimpleNamespace(returncode=0, stdout=dump(), stderr="")) as shell:
             chan.parse(chan.ShellPhone("test"))
         self.assertEqual(shell.call_args.args[0], [run.ADB, "-s", "test", "shell", "dumpsys notification --noredact"])
         self.assertEqual(shell.call_args.kwargs["timeout"], 60)

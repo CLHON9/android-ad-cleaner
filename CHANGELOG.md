@@ -1,5 +1,11 @@
 # 更新记录
 
+## 未发布
+
+| 现象 | 来源 | 处理 |
+|---|---|---|
+| 同一个 seam 上挂着四个 adapter，各写一遍「找 adb → 带 `-s` 执行 → 认 `client_gone` → `wait_for` → 抛 `lost`」；三份 adb 查找列表互不相同（`adb_link.adb_path` 漏 `~/platform-tools`，`run.adb_bin` 漏 `ADBUTILS_ADB_PATH`，`gui.find_adb` 另有客户端下载目录与版本闸门） | 内部重构（[#334](https://github.com/rddmwmddr/android-ad-cleaner/issues/334)） | `tool/adb_link.py` 新增 `Connection`：`shell` / `push` / `alive` / `mark_lost` / `lost_reason`，「等它回来重试一次」与「确认断开后只报一句」只在这里。传输是 adapter——`adb` 命令行（本模块自带）、读屏库的 shell（`fast.Phone` 注入）、测试假 transport。`run.adb_shell`、`chan_fast.ShellPhone`、`fast.Phone._resilient_shell`、`gui.adb_present` / `Api._adb` 都改为消费它，`troubleshooting.accessibility_summary` 的 adb 查找换成 `adb_path()`（它那条只读命令本身没变），`ShellPhone` 里 `from run import ADB` 的反向依赖去掉；`adb_path(first=())` 收口三份查找列表，`≥ 1.0.41` 的版本闸门仍只在客户端。逐字不变：`HINT`、`REPEAT`、「adb 读取失败：」、「adb 传文件失败：」、「找不到 adb。安装方法见 docs/01-准备工作.md」，以及各入口的退出码。行为上只多三处：`run.py` 现在也认 `ADBUTILS_ADB_PATH`；客户端候选顺序统一为「下载目录 → `ADB` → `ADBUTILS_ADB_PATH` → `PATH` → 系统 SDK → `~/platform-tools` → `~/android-tools` → Windows 默认安装目录 / homebrew / `/usr/local/bin`」（原来客户端不看 `ADB` 环境变量）；完全没装 adb 时 `chan_fast` 走它一贯的「✗ …」前缀打印同一句，不再直接 `sys.exit`。模块边界与四个被否的选项见 `docs/adr/0001`。没有真机，验收是对拍：五个回答序列（一次成功 / 断线后回来 / 断线且等不回来 / 等回来但第二次还断 / 普通失败）× 三个入口（`run.adb_shell`、`chan_fast.ShellPhone.shell`、`fast.Phone._resilient_shell`）15 组，另加 `gui.adb_present` 5 组（`device` / `offline` / 空 / 断线原文 / 等 10 秒超时）与「一次掉线不毒掉整批」1 组，比较 argv、重试次数、抛出的异常类型与消息、退出码、返回的布尔，逐项一致；另有 17 条直接断言断线策略、等待语义与查找顺序的用例，以及 7 条守卫断言，确认对拍真的走到了「断线」与「非断线的命令失败」两条路。`python -m unittest discover -s tests` 409 项全过（新增 22 项，2 项既有 skip 照旧） |
+
 ## 0.2.8 · 2026-10-30
 
 0.2.7 之后 Rikki Lv 的修复与重构（#205 #192 #194 #287 #292 #293，统一「行」和「等页面」的写法，PR 自动跑回归和静态检查），加上 vivo 转场慢的修复。

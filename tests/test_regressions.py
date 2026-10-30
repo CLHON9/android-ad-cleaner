@@ -23,6 +23,7 @@ import run
 
 def phone():
     p = fast.Phone.__new__(fast.Phone)
+    p.link = fast.adb_link.Connection("test")
     p.serial, p.lost = "S", False
     p.W, p.H = 1168, 1712
     p.log, p.miss, p.changed = False, 0, []

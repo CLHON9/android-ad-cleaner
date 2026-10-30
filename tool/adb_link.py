@@ -26,16 +26,33 @@ HINT = ("手机和电脑的 adb 连接断开了，本步骤没有完成。请逐
 
 # 一轮内已经确认断线：后面的段只报这一句，不重复上面整段排查说明，也不再逐段重试（#293）。
 REPEAT = "手机和电脑的 adb 连接已断开，本段跳过；原因和排查办法见第一次报错"
+NO_ADB = "找不到 adb。安装方法见 docs/01-准备工作.md"
 
 NOWIN = 0x08000000 if os.name == "nt" else 0
 
 
-def adb_path():
-    for c in (os.environ.get("ADB"), os.environ.get("ADBUTILS_ADB_PATH"), shutil.which("adb"),
-              os.path.expanduser("~/Library/Android/sdk/platform-tools/adb")):
-        if c and os.path.exists(c):
-            return c
-    return None
+def invoke(adb, *args, timeout=20):
+    """跑一条不绑串号的命令（devices / version），返回 stdout。手机连接本身走 Connection。"""
+    return _adb_run(adb, args, timeout).stdout
+
+
+def adb_candidates(first=(), last=()):
+    """按优先级排好的候选 adb（去重、只留存在的）。`first` 是客户端自己下载并校验过的那份，
+    `last` 是客户端独有的兜底位置（Windows 默认安装目录、homebrew 等），排在共用候选之后。"""
+    seen, found = set(), []
+    for c in (*first, os.environ.get("ADB"), os.environ.get("ADBUTILS_ADB_PATH"), shutil.which("adb"),
+              os.path.expanduser("~/Library/Android/sdk/platform-tools/adb"),
+              os.path.expanduser("~/platform-tools/adb"),
+              os.path.expanduser("~/android-tools/platform-tools/adb"), *last):
+        if c and c not in seen and os.path.exists(c):
+            seen.add(c)
+            found.append(c)
+    return found
+
+
+def adb_path(first=()):
+    found = adb_candidates(first)
+    return found[0] if found else None
 
 
 def client_gone(stderr):
@@ -122,6 +139,100 @@ def keyguard_showing(out):
 def lost(detail=""):
     detail = (detail or "").strip()
     return DeviceLost(HINT + (f"\n原始错误：{detail[-200:]}" if detail else ""))
+
+
+class ShellResult:
+    """`adb` 命令行的 shell 结果。`.output` 是读屏库那边的读法，两种调用点都不用改。"""
+    def __init__(self, stdout="", stderr="", returncode=0):
+        self.stdout, self.stderr, self.returncode = stdout, stderr, returncode
+
+    output = property(lambda self: self.stdout)
+
+
+def _adb_run(adb, argv, timeout):
+    result = subprocess.run([adb, *argv], capture_output=True, text=True, encoding="utf-8",
+                            errors="replace", timeout=timeout, creationflags=NOWIN)
+    return ShellResult(result.stdout, result.stderr, result.returncode)
+
+
+class LinkBroken(Exception):
+    """传输层看到「这次失败像是连接断了」。重试还是收场由 Connection 决定，适配器不给结论。"""
+
+    def __init__(self, error):
+        super().__init__(str(error))
+        self.error = error if isinstance(error, BaseException) else RuntimeError(str(error))
+
+
+class Connection:
+    """连着一台手机：带 -s 执行、认断线、等它回来一次；确认断开后只报 REPEAT。
+
+    transport 是适配器：`adb` 命令行这一条本模块自带，读屏库的 shell 由调用方注入，
+    也可以换成任意可编排的假实现。两个开关都只为保住原有入口的差别：
+    `lost_on_retry=False` —— 手机回来了、第二轮仍断时抛原异常，不判成断开（读屏库那条路径）；
+    `sticky=False` —— 一次掉线不写进连接状态，后面的调用重新试（一个 reader 跑一整批时用）。
+    """
+
+    def __init__(self, serial, adb=None, transport=None, lost_on_retry=True, sticky=True):
+        self.serial, self.adb, self.lost = serial, adb, False
+        self.lost_on_retry, self.sticky = lost_on_retry, sticky
+        self._transport = transport
+
+    def _executable(self):
+        adb = self.adb or adb_path()
+        if not adb:
+            raise RuntimeError(NO_ADB)
+        return adb
+
+    def _run(self, argv, timeout):
+        return _adb_run(self._executable(), argv, timeout)
+
+    def _send(self, command, timeout):
+        if self._transport is not None:
+            return self._transport(command, timeout=timeout)
+        result = self._run(["-s", self.serial, "shell", command], timeout)
+        if result.returncode and client_gone(result.stderr):
+            raise LinkBroken(result.stderr)
+        return result
+
+    def shell(self, command, timeout=None):
+        self.check_alive()
+        for attempt in (0, 1):
+            try:
+                return self._send(command, timeout)
+            except LinkBroken as broken:
+                if attempt and not self.lost_on_retry:
+                    raise broken.error
+                if attempt or not wait_for(self.serial, self.adb):
+                    self.mark_lost()
+                    raise lost(str(broken.error)) from broken.error
+
+    def push(self, local, remote, timeout=30):
+        """传文件只有 `adb` 命令行这一条路，读屏库不过手。"""
+        return self._run(["-s", self.serial, "push", local, remote], timeout)
+
+    def alive(self, wait=0):
+        """手机此刻连着吗。wait 是等它回来的秒数：等超时就直接算不在，不再追一次状态查询。"""
+        adb = self.adb or adb_path()
+        if not adb:
+            return False
+        if wait:
+            try:
+                _adb_run(adb, ["-s", self.serial, "wait-for-device"], wait)
+            except (OSError, subprocess.TimeoutExpired):
+                return False
+        return present(self.serial, adb)
+
+    def lost_reason(self):
+        """本轮已经确认断线时该报的那一句；还没断线返回 None。"""
+        return REPEAT if self.lost else None
+
+    def check_alive(self):
+        reason = self.lost_reason()
+        if reason:
+            raise DeviceLost(reason)
+
+    def mark_lost(self):
+        self.lost = self.sticky
 
 
 def lost_from(error, serial, adb=None):
