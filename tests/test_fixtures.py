@@ -92,9 +92,9 @@ class FakePhoneTests(unittest.TestCase):
         self.assertEqual(clock.clicks, 1)
 
     def test_fields_replace_the_defaults(self):
-        p = fixtures.fake_phone(locked=lambda: True, stage="点这一行后页面没变")
+        p = fixtures.fake_phone(locked=lambda: True, vivo_seen=True)
         self.assertTrue(p.locked())
-        self.assertEqual(p.stage, "点这一行后页面没变")
+        self.assertTrue(p.vivo_seen)
 
     def test_drive_reports_result_and_cost(self):
         out, elapsed, reads, clicks = fixtures.drive(lambda p: bool(p.sig()), modules=[fast],

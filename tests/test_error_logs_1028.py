@@ -18,6 +18,7 @@ sys.path.insert(0, str(ROOT / "tool"))
 import adb_link
 import chan_fast as chan
 import fast
+from fixtures import phone_stub
 import run
 
 
@@ -48,9 +49,7 @@ class KeyguardTests(unittest.TestCase):
         self.assertTrue(adb_link.keyguard_showing("    mDreamingLockscreen=true\n"))
 
     def test_engine_collapses_shade_when_not_locked(self):
-        p = fast.Phone.__new__(fast.Phone)
-        p.link = fast.adb_link.Connection("test")
-        p.d = Mock()
+        p = phone_stub("test", d=Mock())
         p.d.shell.side_effect = [out(SHADE + "      mIsShowing=false\n"), out(""),
                                  out(SETTINGS + "      mIsShowing=false\n")]
         with patch.object(fast.time, "sleep"):
@@ -58,9 +57,7 @@ class KeyguardTests(unittest.TestCase):
         self.assertEqual(p.d.shell.call_args_list[1].args[0], "cmd statusbar collapse")
 
     def test_engine_lock_screen_stays_locked_after_collapse(self):
-        p = fast.Phone.__new__(fast.Phone)
-        p.link = fast.adb_link.Connection("test")
-        p.d = Mock()
+        p = phone_stub("test", d=Mock())
         p.d.shell.side_effect = [out(SHADE), out(""), out(SHADE)]
         with patch.object(fast.time, "sleep"):
             self.assertTrue(p.locked())
@@ -74,9 +71,7 @@ class KeyguardTests(unittest.TestCase):
 
 class WaitUnlockedTests(unittest.TestCase):
     def phone(self, states):
-        p = fast.Phone.__new__(fast.Phone)
-        p.link = fast.adb_link.Connection("test")
-        p.d = Mock()
+        p = phone_stub("test", d=Mock())
         p.locked = Mock(side_effect=states)
         return p
 
@@ -104,9 +99,7 @@ class WaitUnlockedTests(unittest.TestCase):
 class FocusTests(unittest.TestCase):
     def test_trailing_brace_is_not_part_of_the_activity(self):
         # vivo OriginOS 3 / Android 13：焦点行以「Activity}}」结尾，以前取到「…Activity}」，渠道页全部认不出
-        p = fast.Phone.__new__(fast.Phone)
-        p.link = fast.adb_link.Connection("test")
-        p.d = Mock()
+        p = phone_stub("test", d=Mock())
         name = "com.vivo.systemuiplugin/com.vivo.systemui.statusbar.notification.settings.channels.NotificationSettingsActivity"
         p.d.shell.return_value = out(f"  mCurrentFocus=Window{{4c2 u0 {name}}}}}\n")
         self.assertEqual(p.focus(), name)
@@ -198,10 +191,8 @@ class DisconnectTests(unittest.TestCase):
         self.assertTrue(adb_link.client_gone("adb.EXE: device offline"))
 
     def test_empty_shell_reply_waits_for_device_then_retries(self):
-        p = fast.Phone.__new__(fast.Phone)
-        p._shell = Mock(side_effect=[fast.u2.exceptions.AdbShellError("shell output invalid", "getprop x", b""), out("ok")])
-        p.link = fast.adb_link.Connection("test", transport=fast._shell_transport(p._shell), lost_on_retry=False)
-        p.serial, p.lost = "test", False
+        shell = Mock(side_effect=[fast.u2.exceptions.AdbShellError("shell output invalid", "getprop x", b""), out("ok")])
+        p = phone_stub("test", shell=fast._shell_transport(shell))
         with patch.object(adb_link, "wait_for", return_value=True):
             self.assertEqual(p._resilient_shell("getprop x").output, "ok")
 
@@ -232,10 +223,8 @@ class ListRowTests(unittest.TestCase):
     focus = "com.android.settings/com.android.settings.Settings$AppNotificationSettingsActivity"
 
     def phone(self):
-        p = fast.Phone.__new__(fast.Phone)
-        p.link = fast.adb_link.Connection("test")
-        p.W, p.H, p.log = 1080, 2340, False
-        p.d = Mock()
+        p = phone_stub("test", d=Mock())
+        p.W, p.H = 1080, 2340
         p.locked = Mock(return_value=False)
         p.focus = Mock(return_value=self.focus)
         p.click = Mock()
@@ -248,10 +237,11 @@ class ListRowTests(unittest.TestCase):
     def test_listview_rows_without_clickable_flag_are_found(self):
         # 华为 HarmonyOS 4：应用通知页的渠道行不可点（ListView 处理点击），以前找不到行就放弃
         p = self.phone()
+        at = chan.Attempt()
         with patch.object(chan.time, "sleep"):
-            self.assertIsNone(chan.via_app_page(p, "com.example", "营销通知"))
+            self.assertIsNone(chan.via_app_page(p, "com.example", "营销通知", at))
         p.click.assert_called_once_with(380, 825)
-        self.assertEqual(p.stage, "点这一行后页面没变")
+        self.assertEqual(at.stage, "点这一行后页面没变")
 
     def test_skip_message_says_where_it_failed(self):
         p = self.phone()

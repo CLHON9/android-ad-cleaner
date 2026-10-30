@@ -16,6 +16,7 @@ import fast
 import run
 import chan_fast as chan
 from bundle_data import bundle_data, stage
+from fixtures import phone_stub
 
 
 def recipe(p, only="__no_steps__"):
@@ -28,10 +29,8 @@ def recipe(p, only="__no_steps__"):
 
 class RotationTests(unittest.TestCase):
     def phone(self):
-        p = fast.Phone.__new__(fast.Phone)
-        p.link = fast.adb_link.Connection("test")
-        p.W, p.H, p.log = 1080, 2340, False
-        p.d = Mock()
+        p = phone_stub("test", d=Mock())
+        p.W, p.H = 1080, 2340
         return p
 
     def test_landscape_right_edge_switch_is_visible_and_clickable(self):

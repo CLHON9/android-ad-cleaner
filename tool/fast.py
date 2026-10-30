@@ -23,6 +23,7 @@ from ui_session import connect
 from troubleshooting import UI_RECOVERY, XIAOMI_INPUT, accessibility_summary, input_blocked
 import adb_link
 import wait
+from reader import Reader
 from row import SWITCH_ROW_DEPTH, bounds, own, title_of
 
 DISMISS = ("以后再说", "暂不更新", "暂不", "取消", "我知道了", "跳过", "禁止", "不再提示", "不同意")
@@ -84,11 +85,11 @@ def _shell_transport(shell):
 
 
 class Phone:
-    def __init__(self, serial, log=True):
+    def __init__(self, serial, log=True, reader: Reader | None = None):
         if log:
             print("正在连接手机读屏服务……", flush=True)
         try:
-            self.d = connect(serial)
+            self.reader = reader if reader is not None else connect(serial)
         except u2.exceptions.AccessibilityServiceAlreadyRegisteredError as e:
             raise RuntimeError("UIAUTOMATION_BUSY：手机读屏服务已被占用，本次未点击开关。"
                                "已清理本次失败的启动并重试一次，仍无法连接。"
@@ -106,22 +107,34 @@ class Phone:
             raise RuntimeError("读屏服务没能装到手机上（adb 传文件失败），本次未点击开关。请拔插数据线、"
                                "退出电脑上的手机助手类软件后重试；仍失败请重启手机。"
                                f"\n原始异常：{type(e).__name__}: {str(e)[:200]}") from e
-        self._shell = self.d.shell
+        self._shell = self.reader.shell
         self.link = adb_link.Connection(serial, transport=_shell_transport(self._shell), lost_on_retry=False)
-        self.d.shell = self._resilient_shell
+        self.reader.shell = self._resilient_shell
         try:
-            self.d.settings["operation_delay"] = (0, 0)
-            self.W, self.H = self.d.window_size()
+            self.reader.settings["operation_delay"] = (0, 0)
+            self.W, self.H = self.reader.window_size()
             # 小米没开「USB 调试（安全设置）」时能读不能点：先探一下，别跑几分钟全是「没找到」。
-            if input_blocked(self.d.shell("input keyevent 0").output):
+            if input_blocked(self.reader.shell("input keyevent 0").output):
                 raise RuntimeError("INPUT_BLOCKED：系统拒绝了电脑发出的点击，本次未点击开关。\n" + XIAOMI_INPUT)
         except BaseException:
-            self.d.close()
+            self.reader.close()
             raise
         self.log = log
         self.pause_at_lock_check = True     # 机型脚本每段开头都查锁屏：这里就是段与段之间，可以暂停
+        self.safe_mode = False              # 安全模式（参考脚本 / 录制版本不符）：off() 只关点名的开关，不做整页全关
+        self.systemui_text = False          # 读屏时是否算上 com.android.systemui 的文字（vivo OriginOS Ocean 的通知页就挂在那里）
+        self.vivo_seen = False              # 见过 vivo 的通知页：渠道页与应用通知页是同一个 Activity，只从应用列表进
         self.changed = []          # (页面, 标题) 记录本次关掉的
         self.miss = 0              # 本段已经没找到几次；>0 说明路径对不上，后面只看当前屏、不再翻页找
+
+    @property
+    def d(self):
+        """读屏 adapter 的历史名字：recipes（`p.d.shell`）与测试用它，实体是同一个 `reader`。"""
+        return self.reader
+
+    @d.setter
+    def d(self, value):
+        self.reader = value
 
     @property
     def serial(self):
@@ -163,7 +176,7 @@ class Phone:
             raise
 
     def close(self):
-        self.d.close()
+        self.reader.close()
 
     def __enter__(self):
         return self
@@ -177,9 +190,9 @@ class Phone:
 
     # ---------- 读屏 ----------
     def tree(self):
-        root = ET.fromstring(self._u2(self.d.dump_hierarchy))
+        root = ET.fromstring(self._u2(self.reader.dump_hierarchy))
         # Mi 10 的热榜子页会横屏；不能一直用连接时的竖屏尺寸过滤节点。
-        self.W, self.H = self._u2(self.d.window_size)
+        self.W, self.H = self._u2(self.reader.window_size)
         return root
 
     def focus(self):
@@ -187,14 +200,14 @@ class Phone:
         self.check_alive()
         # 不能加 grep -m / head：提前退出会让 dumpsys 收到 SIGPIPE，u2 判「shell output invalid」（#205）。
         # sed 读完整个流再截断，行数与原来一致。
-        out = self.d.shell("dumpsys window | grep -E 'mCurrentFocus|mFocusedApp' | sed -n '1,4p'").output
+        out = self.reader.shell("dumpsys window | grep -E 'mCurrentFocus|mFocusedApp' | sed -n '1,4p'").output
         # vivo OriginOS 3 / Android 13 行尾是「Activity}}」（错误日志 10-27）。
         # 焦点窗口为 null 时看 mFocusedApp：华为 HarmonyOS 4.2、vivo OriginOS Ocean 页面明明在，以前报「停在 未知页面」（错误日志 10-29）
         for field in ("mCurrentFocus", "mFocusedApp"):
             m = re.search(field + r"=.*? u0 ([^\s}]+)", out)
             if m:
                 return m.group(1)
-        out = self.d.shell("dumpsys activity activities | grep -E 'topResumedActivity|mResumedActivity|ResumedActivity:'"
+        out = self.reader.shell("dumpsys activity activities | grep -E 'topResumedActivity|mResumedActivity|ResumedActivity:'"
                            " | sed -n '1p'").output
         m = re.search(r"u0 (\S+/[^\s}]+)", out) or re.search(r" (\S+/[^\s}]+)", out)
         return m.group(1) if m else ""
@@ -203,7 +216,7 @@ class Phone:
         root = root if root is not None else self.tree()
         out = []
         for n in root.iter("node"):
-            if n.get("package") == "com.android.systemui" and not getattr(self, "sysui", False):
+            if n.get("package") == "com.android.systemui" and not self.systemui_text:
                 continue                      # 状态栏/通知栏文字不算
             t = (n.get("text") or n.get("content-desc") or "").strip()
             if t and self.on_screen(n):
@@ -233,7 +246,7 @@ class Phone:
                     l, t, r, b = bounds(n)
                     if r - l > 0 and b - t > 0:
                         if shot is None:
-                            shot = self.d.screenshot()
+                            shot = self.reader.screenshot()
                         # UI 坐标与截图可能来自不同分辨率/旋转状态。不能越界取样，也不能把未知状态当关。
                         if shot.size != (self.W, self.H):
                             continue
@@ -265,20 +278,20 @@ class Phone:
         return rows
 
     def locked(self):
-        if getattr(self, "pause_at_lock_check", False) and pause_point():
+        if self.pause_at_lock_check and pause_point():
             return not self.wait_unlocked()      # 暂停时机主可能锁了屏：亮屏等他解锁
-        out = self.d.shell(adb_link.KEYGUARD_CMD).output
+        out = self.reader.shell(adb_link.KEYGUARD_CMD).output
         if adb_link.focus_window(out) == "NotificationShade" and not adb_link.LOCK_FIELD.search(out):
             # 可能只是通知栏被拉下来了：收起后再看；锁屏界面收不起来，焦点仍是 NotificationShade
-            self.d.shell("cmd statusbar collapse")
+            self.reader.shell("cmd statusbar collapse")
             time.sleep(0.4)
-            out = self.d.shell(adb_link.KEYGUARD_CMD).output
+            out = self.reader.shell(adb_link.KEYGUARD_CMD).output
         return adb_link.keyguard_showing(out)
 
     def wait_unlocked(self, timeout=90):
         """锁屏时点亮屏幕，等机主解锁（不代替解锁）。等到了返回 True。
         错误日志 10-27：约 15 份报告在开始执行时手机已锁屏，以前直接报失败，后面每一项都重复「锁屏了」。"""
-        self.d.shell("input keyevent KEYCODE_WAKEUP")
+        self.reader.shell("input keyevent KEYCODE_WAKEUP")
         if not self.locked():
             return True
         print(f"  ! 手机锁屏了：请解锁手机并保持亮屏，解锁后自动继续（最多等 {timeout} 秒）", flush=True)
@@ -327,13 +340,13 @@ class Phone:
 
     # ---------- 动作 ----------
     def click(self, x, y):
-        size = self._u2(self.d.window_size)
+        size = self._u2(self.reader.window_size)
         if tuple(size) != (self.W, self.H):
             self.W, self.H = size
             raise RuntimeError("屏幕方向或尺寸已变化，停止使用旧坐标；请重新读取页面")
         if not (0 <= x < self.W and 0 <= y < self.H):
             raise RuntimeError("点击坐标在屏幕外，未操作")
-        out = self.d.shell(f"input swipe {x} {y} {x} {y} 80").output   # 有的 App 吞 input tap
+        out = self.reader.shell(f"input swipe {x} {y} {x} {y} 80").output   # 有的 App 吞 input tap
         if input_blocked(out):
             raise RuntimeError("系统拒绝了电脑发出的点击。" + XIAOMI_INPUT)
 
@@ -347,7 +360,7 @@ class Phone:
         c = [f"input motionevent DOWN {x} {y1}"]
         c += [f"input motionevent MOVE {x} {int(y1 + (y2 - y1) * i / 6)}" for i in range(1, 7)]
         c += ["sleep 0.12", f"input motionevent UP {x} {y2}"]
-        self.d.shell(";".join(c))
+        self.reader.shell(";".join(c))
         time.sleep(0.15)
 
     def top(self, n=4):
@@ -543,7 +556,7 @@ class Phone:
     def back(self, n=1):
         for _ in range(n):
             b = self.sig()
-            self.d.shell("input keyevent BACK")
+            self.reader.shell("input keyevent BACK")
             self.settle(b, 0.6)
 
     def confirm(self):
@@ -591,7 +604,7 @@ class Phone:
                     continue
                 if only is not None and not any(k in t for k in only) and not (want and TRACK_WORDS.search(t)):
                     continue                              # 「限制广告跟踪」这类保护开关：不在名单里也要打开
-                if os.environ.get("AAC_REF") and only is None and not want:
+                if self.safe_mode and only is None and not want:
                     kept.add(t)
                     continue                              # 参考脚本（同品牌别的机型录的）：不做整页全关
                 checked.add(t)
@@ -674,27 +687,27 @@ class Phone:
             if not self.edit_ready():
                 return
             try:
-                self.d.jsonrpc.clearTextField(selector, http_timeout=timeout)
+                self.reader.jsonrpc.clearTextField(selector, http_timeout=timeout)
             except Exception:
                 pass
 
         # 直接对已确认的输入框发有超时的 RPC，不启动无法取消的后台线程。
         # 旧线程超时后仍会等控件出现，可能在下一页补打文字；也不能退回任意 focused 节点（键盘也有）。
-        selector = self.d(classNameMatches=r".*(EditText|AutoCompleteTextView)$", focused=True).selector
+        selector = self.reader(classNameMatches=r".*(EditText|AutoCompleteTextView)$", focused=True).selector
         def set_text():
-            self.d.jsonrpc.setText(selector, kw, http_timeout=timeout)
+            self.reader.jsonrpc.setText(selector, kw, http_timeout=timeout)
         if attempt(set_text):
             return True
         if not self.edit_ready():
             return False
         clear()
         def paste():
-            self.d.jsonrpc.setClipboard(None, kw, http_timeout=timeout)
-            self.d.shell("input keyevent KEYCODE_PASTE", timeout=timeout)
+            self.reader.jsonrpc.setClipboard(None, kw, http_timeout=timeout)
+            self.reader.shell("input keyevent KEYCODE_PASTE", timeout=timeout)
         if attempt(paste):
             return True
         clear()
-        self.d.shell("input keyevent BACK")
+        self.reader.shell("input keyevent BACK")
         return False
 
     BOX = re.compile(r"^搜索.{0,6}设置|^Search settings", re.I)
@@ -711,7 +724,7 @@ class Phone:
         box：搜索框文字，不给就自动认（小米「搜索系统设置项」、OPPO「搜索设置项」等）。
         设置首页刚打开时点搜索框会被忽略（小米 18 Pro Max 实测）：点完要看到输入框才往下走，没打开就再点。"""
         self.miss = 0
-        self.d.shell("am start -f 0x10008000 -a android.settings.SETTINGS")
+        self.reader.shell("am start -f 0x10008000 -a android.settings.SETTINGS")
 
         def box_at():
             for t, (l, tp, r, b), _ in self.texts():
@@ -764,13 +777,13 @@ class Phone:
         self.check_alive()
         self.miss = 0
         if activity:
-            result = self.d.shell(f"am start -f 0x10008000 -n {pkg}/{activity}")
+            result = self.reader.shell(f"am start -f 0x10008000 -n {pkg}/{activity}")
         else:
-            self._u2(self.d.app_stop, pkg)
-            result = self.d.shell(f"monkey -p {pkg} -c android.intent.category.LAUNCHER 1")
+            self._u2(self.reader.app_stop, pkg)
+            result = self.reader.shell(f"monkey -p {pkg} -c android.intent.category.LAUNCHER 1")
         if result.exit_code or re.search(r"Error|Exception|No activities found|monkey aborted", result.output, re.I):
             # 同品牌参考脚本里的 App 本机可能没装或换了包名（#87 #165），说清楚，别报成打开失败。
-            pm = self.d.shell(f"pm path {pkg}").output
+            pm = self.reader.shell(f"pm path {pkg}").output
             if "package:" not in pm:
                 # adb 断开时 pm path 也一样没有输出：先确认手机还在不在，
                 # 别把断连报成「本机没有安装」，后面的段也据此快速跳过（#293）。
@@ -876,6 +889,8 @@ def execute(p, cmd, rest):
         t = time.time(); n = p.off(only=rest[0].split(","))
         print(f"关了 {n} 个，{time.time()-t:.1f} 秒")
     elif cmd == "run":
+        p.safe_mode = p.safe_mode or "--ref" in rest    # 参考脚本：off() 不做整页全关，由 run.py 传下来
+        rest = [x for x in rest if x != "--ref"]
         if not p.wait_unlocked():
             print("✗ 手机一直锁屏，本步骤没有执行。请解锁手机、保持亮屏后重试"); sys.exit(2)
         g = {"p": p, "__name__": "__recipe__", "ONLY": rest[1:]}
@@ -885,7 +900,7 @@ def execute(p, cmd, rest):
         osv = p.d.shell("getprop ro.mi.os.version.incremental").output.strip()     # 小米：HyperOS 版本号
         m = re.search(r'^BUILD\s*=\s*"([^"]+)"', src, re.M)
         if m and not (build.startswith(m.group(1)) or osv.startswith(m.group(1))):
-            os.environ["AAC_REF"] = "1"
+            p.safe_mode = True
             print(f"⚠ 机型脚本是按 {m.group(1)} 录的，这台是 {osv or build}：用安全模式跑（只关点名的开关），没找到的段会快速跳过")
         t = time.time()
         try:

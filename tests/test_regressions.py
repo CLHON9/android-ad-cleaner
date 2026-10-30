@@ -19,14 +19,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tool"))
 import adb_link
 import fast
 import run
+from fixtures import phone_stub
 
 
 def phone():
-    p = fast.Phone.__new__(fast.Phone)
-    p.link = fast.adb_link.Connection("test")
-    p.serial, p.lost = "S", False
+    p = phone_stub("S")
     p.W, p.H = 1168, 1712
-    p.log, p.miss, p.changed = False, 0, []
     p.d = Mock()
     return p
 
@@ -338,10 +336,24 @@ class LaunchTests(unittest.TestCase):
         p.d.shell.return_value = types.SimpleNamespace(output="different-version")
         with tempfile.TemporaryDirectory() as d:
             recipe = Path(d) / "recipe.py"
-            recipe.write_text('BUILD = "old-version"\nassert __import__("os").environ["AAC_REF"] == "1"\n')
+            recipe.write_text('BUILD = "old-version"\nassert p.safe_mode is True\n')
             with patch.object(fast, "Phone", return_value=p), patch.object(sys, "argv", ["fast.py", "-s", "test", "run", str(recipe)]), \
                  patch.dict(os.environ, {"AAC_BACKUPS": d}), contextlib.redirect_stdout(io.StringIO()):
                 fast.main()
+
+    def test_reference_script_flag_reaches_safe_mode(self):
+        # run.py 用 --ref 传下来，不再靠 AAC_REF 环境变量
+        p = phone()
+        p.locked = Mock(return_value=False)
+        p.d.shell.return_value = types.SimpleNamespace(output="OS4.0")
+        with tempfile.TemporaryDirectory() as d:
+            recipe = Path(d) / "recipe.py"
+            recipe.write_text('assert p.safe_mode is True\n')
+            with patch.object(fast, "Phone", return_value=p), \
+                 patch.object(sys, "argv", ["fast.py", "-s", "test", "run", str(recipe), "--ref"]), \
+                 patch.dict(os.environ, {"AAC_BACKUPS": d}), contextlib.redirect_stdout(io.StringIO()):
+                fast.main()
+        self.assertNotIn("AAC_REF", os.environ)
 
     def test_vivo_model_alias_and_version(self):
         for model in ("V2547DA", "V2547A"):
@@ -354,6 +366,18 @@ class LaunchTests(unittest.TestCase):
         with patch.object(sys, "frozen", True, create=True), patch.object(sys, "executable", "/tmp/app"):
             self.assertEqual(run.script_cmd("fast.py", "-s", "test", "ls"),
                              ["/tmp/app", "--cli", "fast.py", "-s", "test", "ls"])
+
+    def test_recipe_passes_safe_mode_as_a_flag(self):
+        with patch.object(sys, "argv", ["run.py", "-s", "test", "recipe", "--ref"]), \
+             patch.object(run, "info", return_value={"brand": "Xiaomi", "model": "M154FF", "build": "OS4.0"}), \
+             patch.object(run, "recipe_for", return_value=("recipe.py", "ref.py")), \
+             patch.object(run, "recipe_meta", return_value={"build": "OS4.0"}), \
+             patch.object(run, "locked", return_value=False), \
+             patch.object(run, "sh", return_value="15"), \
+             patch.object(run, "py", return_value=0) as py:
+            with self.assertRaises(SystemExit):
+                run.main()
+        self.assertEqual(py.call_args.args, ("fast.py", "-s", "test", "run", "recipe.py", "--ref"))
 
     def test_recipe_restores_stay_awake_on_failure(self):
         with patch.object(sys, "argv", ["run.py", "-s", "test", "recipe"]), \

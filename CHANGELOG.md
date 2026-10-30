@@ -1,5 +1,11 @@
 # 更新记录
 
+## 未发布
+
+| 现象 | 来源 | 处理 |
+|---|---|---|
+| `fast.Phone` 的 interface 有一半没声明：`sysui` / `vivo_seen` / `vivo_app` / `why` / `stage` / `pkg_now` 由别的模块临时挂上，读的地方一律 `getattr(p, "x", 默认值)`，写错名字也不报错；测试只能 `.__new__` 后逐项赋值（28 处、10 个文件），`AAC_REF` 环境变量还改写 `off()` 的语义 | 内部重构（[#344](https://github.com/rddmwmddr/android-ad-cleaner/issues/344)） | 按生命周期拆开：一次渠道尝试内的诊断（`why` / `stage` / `vivo_app`）搬进 `chan_fast.Attempt`，由 `toggle()` 创建、作为必填参数穿过 `channel_switch` / `inline_switch` / `page_switch` / `wait_page` / `via_app_page` / `undo`，不再手工清空上一个渠道的残留；读屏策略与设备记忆（`systemui_text`（改名自 `sysui`）/ `vivo_seen` / `safe_mode`）在 `Phone.__init__` 声明，`getattr` 兜底全删，忘了初始化会在第一次读时炸；`pkg_now` 消失，改成 `entries(p, pkg)` 的参数；`AAC_REF` 换成 `Phone.safe_mode`，由 `run.py` 追加的 `fast.py run --ref` 传下去（版本不符时 `fast.py` 自己置位）。读屏 adapter 起名 `tool/reader.py` 的 `Reader`：`Phone.reader` 是名字，`p.d` 保留为写穿 property，`recipes/` 85 处 `p.d.xxx` 与测试引用一行不改；`Phone` 也可以从注入的 reader 构造。逐字不变：`NOT_CONFIRMED` 的整句（`stage` ＋ `page_hint` ＋ `why` 的拼法）、安全模式的提示、各入口退出码与 `--ref` 的对外用法。测试装配迁到 `phone_stub()`（它补齐构造处的默认值，只有 `pause_at_lock_check` 默认为 `False`——假手机后面没有客户端在点「暂停」）。模块边界与五个被否的选项见 `docs/adr/0002`。没有真机，验收是对拍，驱动在 `tests/compare_phone_state.py`（改动前的 `tool/` 当基线，一条命令跑两边）：`texts()` 228 组（`tests/` 全部可解析页面样本 × 两种屏尺寸 × 读屏策略开 / 关）、`entries()` 116 组（页面 × 包名）、`off()` 2 组（安全模式开 / 关，改前靠 `AAC_REF=1`、改后靠 `p.safe_mode`），逐项一致；守卫断言确认对拍真的走到目标分支——翻策略有 2 组输出不同，换包名有 2 页不同，安全模式把同一页的点击从 6 次降到 3 次。`python -m unittest discover -s tests` 504 项全过（新增 10 项，2 项既有 skip 照旧） |
+
 ## 0.2.9 · 2026-10-30
 
 Rikki Lv 的手机连接重构和华为同名渠道行修复（#287）；合并 12 个社区 PR：10 个新机型脚本、1 个华为营销通知命令行工具、同一型号按系统版本选脚本。
