@@ -1,8 +1,9 @@
 """读屏失败的排查提示；辅助检查仅读取设置，不停用其他服务。"""
 import os
 import re
-import shutil
 import subprocess
+
+import adb_link
 
 
 UI_RECOVERY = (
@@ -39,10 +40,7 @@ def is_ui_connection_error(detail):
 def accessibility_summary(serial, adb=None):
     """有界只读检查；仅返回总开关和数量，应用 / 服务标识不进入诊断。"""
     try:
-        adb = adb or os.environ.get("ADB") or os.environ.get("ADBUTILS_ADB_PATH") or shutil.which("adb")
-        if not adb:
-            candidate = os.path.expanduser("~/Library/Android/sdk/platform-tools/adb")
-            adb = candidate if os.path.isfile(candidate) else None
+        adb = adb or adb_link.adb_path()
         if not adb:
             return "未找到可用于只读检查的 adb；仍可按下方步骤排查。"
         result = subprocess.run(

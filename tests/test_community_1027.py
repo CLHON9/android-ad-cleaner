@@ -22,6 +22,7 @@ import troubleshooting
 
 def page(xml, focus, w=1080, h=2340):
     p = fast.Phone.__new__(fast.Phone)
+    p.link = fast.adb_link.Connection("test")
     p.W, p.H, p.log = w, h, False
     p.d = Mock()
     p.locked = Mock(return_value=False)
@@ -240,6 +241,7 @@ class LockedChannelTests(unittest.TestCase):
 class DismissTests(unittest.TestCase):
     def phone(self, xml):
         p = fast.Phone.__new__(fast.Phone)
+        p.link = fast.adb_link.Connection("test")
         p.W, p.H, p.log = 1272, 2772, False
         p.d = Mock()
         p.tree = Mock(return_value=ET.fromstring(xml))
@@ -299,6 +301,7 @@ class SearchBoxTests(unittest.TestCase):
     def test_autocomplete_search_box_counts_as_input(self):
         # 荣耀 PNM-AN10 10.0.0.102 真机：设置搜索框是 AutoCompleteTextView，以前判成「搜索框没打开」
         p = fast.Phone.__new__(fast.Phone)
+        p.link = fast.adb_link.Connection("test")
         p.W, p.H = 1080, 2420
         p.tree = Mock(return_value=ET.fromstring('''<hierarchy><node class="android.widget.AutoCompleteTextView"
             focused="true" text="广告" bounds="[138,509][930,629]"/></hierarchy>'''))
@@ -310,6 +313,7 @@ class LockScreenTests(unittest.TestCase):
     def test_other_true_fields_on_the_line_are_not_a_lock(self):
         # #115 跟帖：HyperOS 3 全程解锁，30 个渠道都被判成「手机锁屏了」
         p = fast.Phone.__new__(fast.Phone)
+        p.link = fast.adb_link.Connection("test")
         p.d = Mock()
         p.d.shell.return_value = types.SimpleNamespace(output="    isKeyguardShowing=false mKeyguardOccluded=true\n")
         self.assertFalse(p.locked())
@@ -362,8 +366,9 @@ class AdbLinkTests(unittest.TestCase):
 
     def test_engine_shell_waits_then_marks_lost(self):
         p = fast.Phone.__new__(fast.Phone)
-        p.serial, p.lost = "S", False
         p._shell = Mock(side_effect=Exception("device 'S' not found"))
+        p.link = fast.adb_link.Connection("S", transport=fast._shell_transport(p._shell), lost_on_retry=False)
+        p.serial, p.lost = "S", False
         with patch.object(adb_link, "wait_for", return_value=False):
             with self.assertRaises(adb_link.DeviceLost):
                 p._resilient_shell("dumpsys window")
@@ -373,8 +378,9 @@ class AdbLinkTests(unittest.TestCase):
 
     def test_engine_shell_recovers_from_short_drop(self):
         p = fast.Phone.__new__(fast.Phone)
-        p.serial, p.lost = "S", False
         p._shell = Mock(side_effect=[Exception("device 'S' not found"), types.SimpleNamespace(output="ok")])
+        p.link = fast.adb_link.Connection("S", transport=fast._shell_transport(p._shell), lost_on_retry=False)
+        p.serial, p.lost = "S", False
         with patch.object(adb_link, "wait_for", return_value=True):
             self.assertEqual(p._resilient_shell("echo").output, "ok")
 

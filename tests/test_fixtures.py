@@ -104,5 +104,19 @@ class FakePhoneTests(unittest.TestCase):
         self.assertEqual((reads, clicks), (1, 0))
 
 
+class PhoneStubTests(unittest.TestCase):
+    """`phone_stub` 是「不连手机的 Phone」的唯一装配点，fake_phone 也建在它上面。"""
+
+    def test_serial_and_lost_write_through_to_the_link(self):
+        p = fixtures.phone_stub("S")
+        self.assertEqual(p.serial, "S")
+        p.lost = True
+        self.assertTrue(p.link.lost)
+        self.assertEqual(p.link.serial, "S")
+
+    def test_the_default_shell_answers_empty(self):
+        self.assertEqual(fixtures.phone_stub().link.shell("getprop x").output, "")
+
+
 if __name__ == "__main__":
     unittest.main()

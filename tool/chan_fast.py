@@ -7,9 +7,8 @@
   chan_fast.py -s SERIAL on  清单.tsv      还原
 清单.tsv：包名<TAB>渠道id<TAB>说明[<TAB>应用名]，一行一个；# 开头是注释。
 """
-import re, shlex, sys, time, os, subprocess
+import re, shlex, sys, time, os
 from dataclasses import dataclass
-from types import SimpleNamespace
 for _st in (sys.stdout, sys.stderr):
     try:
         _st.reconfigure(encoding="utf-8", errors="replace")   # Windows 控制台默认不是 UTF-8
@@ -24,30 +23,20 @@ import adb_link
 import wait
 
 
-class ShellPhone:
+class ShellPhone(adb_link.Connection):
     """扫描和复查只读 adb，不启动手机端 UiAutomation。"""
     def __init__(self, serial):
-        self.serial, self.d = serial, self
+        super().__init__(serial, sticky=False)          # 一个 reader 跑一整批：一次掉线不该毒掉后面的读取
+        self.d = self
 
     def shell(self, command, timeout=60):
-        from run import ADB
-        for attempt in range(2):
-            result = subprocess.run([ADB, "-s", self.serial, "shell", command], capture_output=True,
-                                    text=True, encoding="utf-8", errors="replace", timeout=timeout,
-                                    creationflags=0x08000000 if os.name == "nt" else 0)
-            if not (result.returncode and adb_link.client_gone(result.stderr)):
-                break
-            if attempt or not adb_link.wait_for(self.serial, ADB):
-                raise adb_link.lost(result.stderr)
+        result = super().shell(command, timeout=timeout)
         if result.returncode:
             raise RuntimeError("adb 读取失败：" + (result.stderr or result.stdout).strip())
-        return SimpleNamespace(output=result.stdout)
+        return result
 
     def push(self, local, remote, timeout=30):
-        from run import ADB
-        result = subprocess.run([ADB, "-s", self.serial, "push", local, remote], capture_output=True, text=True,
-                                encoding="utf-8", errors="replace", timeout=timeout,
-                                creationflags=0x08000000 if os.name == "nt" else 0)
+        result = super().push(local, remote, timeout=timeout)
         if result.returncode:
             raise RuntimeError("adb 传文件失败：" + (result.stderr or result.stdout).strip())
 
@@ -368,14 +357,15 @@ def inline_switch(p, name):
     """应用通知页里渠道行自带开关（荣耀 MagicOS 10 / Android 16，#99）。
     只认标题与渠道名完全相同、全页唯一合格的一行：行里恰有一个开关、行高合理、行内没有应用总开关。
     同名文字可能不止一处（华为 HarmonyOS 4 的应用通知页把分组名写在列表里，和渠道名相同，#287）：
-    没有开关或开关对不上的那些行不算，只有剩下一行时才用。"""
+    没有开关或开关对不上的那些行不算，只有剩下一行时才用。剩下的行仍不止一条时再分一次：
+    渠道行的标题和它自己的开关在同一水平带上，分组名借来的开关通常错开一整个行高（错误日志 10-30）。"""
     focus = notification_focus(p)
     if not name or name in ALLOW or not focus or vivo_page(focus):
         return None
     root = p.tree()
     parents = {c: n for n in root.iter() for c in n}
     # 开关自己的无障碍标签、整行的标签可能也是渠道名：开关本身不算，同一行只算一次
-    rows, missing, reasons = set(), False, []
+    rows, missing, notes = set(), False, []
     good = []
     for t, b, n in p.texts(root):
         if t != name or b[1] < p.H * 0.22 or n.get("checkable") == "true":
@@ -383,24 +373,34 @@ def inline_switch(p, name):
         row, boxes = own(n, parents, p.on_screen)
         if row is None:
             missing = True
-            reasons.append("没找到所在行；" + chain(n, parents))
+            notes.append("没找到所在行；" + chain(n, parents))
             continue
         if id(row) in rows:
             continue
         rows.add(id(row))
         l, tp, r, btm = bounds(row)
         labels = {(x.get("text") or x.get("content-desc") or "").strip() for x in row.iter()}
-        if len(boxes) == 1 and btm - tp <= p.H * 0.2 and not labels & ALLOW:
-            good.append(boxes)
-        else:
-            reasons.append(f"行内开关 {len(boxes)} 个，行高 {round((btm - tp) * 100 / p.H)}%"
-                           + ("，行内有应用总开关" if labels & ALLOW else "") + "；" + chain(n, parents))
+        gap = tol = 0
+        if boxes:
+            sl, st, sr, sb = bounds(boxes[0])
+            gap = abs((b[1] + b[3]) // 2 - (st + sb) // 2)
+            tol = max(b[3] - b[1], sb - st)
+        ok = len(boxes) == 1 and btm - tp <= p.H * 0.2 and not labels & ALLOW
+        notes.append(f"行内开关 {len(boxes)} 个，行高 {round((btm - tp) * 100 / p.H)}%"
+                     + (f"，文字与开关错开 {gap}px" if ok else "")
+                     + ("，行内有应用总开关" if labels & ALLOW else "") + "；" + chain(n, parents))
+        if ok:
+            good.append((boxes, gap, tol))
+    if len(good) > 1:
+        same = [g for g in good if g[1] <= g[2]]
+        if len(same) == 1:
+            good = same
     if len(good) != 1:
         count = len(rows) + (1 if missing else 0)
-        p.why = (reasons[0] if count == 1 and reasons
-                 else f"同名 {count} 行" + (f"：{reasons[0]}" if reasons else ""))
+        p.why = (notes[0] if count == 1 and notes
+                 else f"同名 {count} 行" + (f"：{' | '.join(notes[:3])}" if notes else ""))
         return None
-    boxes = good[0]
+    boxes = good[0][0]
     bl, bt, br, bb = bounds(boxes[0])
     return name, boxes[0].get("checked") == "true", ((bl + br) // 2, (bt + bb) // 2)
 

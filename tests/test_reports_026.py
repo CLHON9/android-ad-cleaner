@@ -29,6 +29,7 @@ OCEAN_FOCUS = "com.android.systemui/com.vivo.systemui.statusbar.notification.set
 def phone(pages, focus, w=1080, h=2340):
     """pages：依次返回的页面，最后一页一直重复。"""
     p = fast.Phone.__new__(fast.Phone)
+    p.link = fast.adb_link.Connection("test")
     p.W, p.H, p.log = w, h, False
     p.d = Mock()
     p.locked = Mock(return_value=False)
@@ -418,6 +419,7 @@ class PauseTests(unittest.TestCase):
 
     def test_recipe_segments_pause_at_their_lock_check_and_wait_for_unlock(self):
         p = fast.Phone.__new__(fast.Phone)
+        p.link = fast.adb_link.Connection("test")
         p.pause_at_lock_check = True
         p.d = Mock()
         p.wait_unlocked = Mock(return_value=True)

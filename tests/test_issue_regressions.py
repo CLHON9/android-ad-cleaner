@@ -27,6 +27,7 @@ import run
 
 def channel_phone():
     p = fast.Phone.__new__(fast.Phone)
+    p.link = fast.adb_link.Connection("test")
     p.W, p.H, p.log = 1080, 1920, False
     p.d = Mock()
     p.locked = Mock(return_value=False)
@@ -57,6 +58,7 @@ class ShellPipeTests(unittest.TestCase):
     def dumpsys_commands(self):
         calls = []
         p = fast.Phone.__new__(fast.Phone)
+        p.link = fast.adb_link.Connection("test")
         p.d = Mock()
         p.d.shell.side_effect = lambda cmd, *a, **k: (calls.append(cmd), types.SimpleNamespace(output=""))[1]
         p.focus()
@@ -71,6 +73,7 @@ class ShellPipeTests(unittest.TestCase):
     def test_focus_uses_first_match_when_the_whole_stream_is_read(self):
         # sed 把整条流读完后截断到前几行，输出仍可能有多条匹配；取第一行才是原来的语义
         p = fast.Phone.__new__(fast.Phone)
+        p.link = fast.adb_link.Connection("test")
         p.d = Mock()
         p.d.shell.return_value = types.SimpleNamespace(output=(
             "  mCurrentFocus=Window{1 u0 com.a/.A}\n  mCurrentFocus=Window{2 u0 com.b/.B}\n"))
@@ -166,7 +169,7 @@ class ChannelTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory, "channels.tsv")
             path.write_text("com.example\tpromo \t营销 \ncom.example\tpromo\t营销\n", encoding="utf-8")
-            with patch.object(chan.subprocess, "run", return_value=result), \
+            with patch.object(subprocess, "run", return_value=result), \
                  patch.object(sys, "argv", ["chan_fast.py", "-s", "test", "verify", str(path)]), \
                  contextlib.redirect_stdout(io.StringIO()) as out:
                 chan.main()
@@ -180,7 +183,7 @@ class ChannelTests(unittest.TestCase):
         NotificationChannel{mId='flhd', mName=福利活动, mDescription=null, mImportance=3, mDeleted=false}
         NotificationChannel{mId='flhd ', mName=福利活动 , mDescription=null, mImportance=3, mDeleted=false}
     """)
-        with patch.object(chan.subprocess, "run", return_value=result), \
+        with patch.object(subprocess, "run", return_value=result), \
              patch.object(chan, "app_labels", return_value={}), \
              patch.object(sys, "argv", ["chan_fast.py", "-s", "test", "scan"]), \
              contextlib.redirect_stdout(io.StringIO()) as out:
@@ -445,6 +448,7 @@ class ExternalAdbServerTests(unittest.TestCase):
 
     def phone(self):
         p = fast.Phone.__new__(fast.Phone)
+        p.link = fast.adb_link.Connection("test")
         p.serial, p.lost, p.W, p.H = "S", False, 1080, 1920
         p.log, p.miss, p.changed = False, 0, []
         p.d = Mock()
@@ -663,6 +667,7 @@ class RepeatedChannelNameTests(unittest.TestCase):
 
     def phone(self, page):
         p = fast.Phone.__new__(fast.Phone)
+        p.link = fast.adb_link.Connection("test")
         p.W, p.H, p.log, p.sysui = 1080, 2340, False, False
         p.d = Mock()
         p.focus = Mock(return_value=self.APP)
@@ -673,13 +678,23 @@ class RepeatedChannelNameTests(unittest.TestCase):
         self.assertEqual(chan.inline_switch(self.phone(self.PAGE), "营销通知"), ("营销通知", True, (950, 980)))
 
     def test_two_rows_that_both_have_switches_are_still_refused(self):
-        # 两个都合格时无从判断哪个是渠道行，只能放弃，不能猜
+        # 两个都合格、又都在同一水平带上时无从判断哪个是渠道行，只能放弃，不能猜
         page = self.PAGE.replace('<node text="3 个渠道" bounds="[80,810][500,840]"/>',
                                  '<node class="android.widget.Switch" checkable="true" checked="true"'
                                  ' bounds="[900,730][1000,810]"/>')
         p = self.phone(page)
         self.assertIsNone(chan.inline_switch(p, "营销通知"))
         self.assertIn("同名 2 行", p.why)
+        # 放弃时两行都要留下结构，下一次上报才定位得到
+        self.assertEqual(p.why.count("结构 "), 2)
+        self.assertNotIn("营销通知", p.why)       # 只有控件类型，不带页面文字
+
+    def test_the_row_whose_switch_sits_on_its_own_baseline_wins(self):
+        # 分组名借来的开关错开一整个行高：只留和标题对齐的那一行（#287 第二次复测）
+        page = self.PAGE.replace('<node text="3 个渠道" bounds="[80,810][500,840]"/>',
+                                 '<node class="android.widget.Switch" checkable="true" checked="true"'
+                                 ' bounds="[900,1000][1000,1080]"/>')
+        self.assertEqual(chan.inline_switch(self.phone(page), "营销通知"), ("营销通知", True, (950, 980)))
 
 
 if __name__ == "__main__":

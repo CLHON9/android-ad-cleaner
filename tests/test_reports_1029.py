@@ -21,6 +21,7 @@ import fast
 
 def phone(xml, w=1080, h=2340):
     p = fast.Phone.__new__(fast.Phone)
+    p.link = fast.adb_link.Connection("test")
     p.W, p.H, p.log, p.miss = w, h, False, 0
     p.d = Mock()
     p.click = Mock()
@@ -99,6 +100,7 @@ class FocusTests(unittest.TestCase):
     def test_null_focus_falls_back_to_focused_app(self):
         # 华为 LIO-AN00 HarmonyOS 4.2、vivo V2111A：页面在，却报「停在 未知页面」
         p = fast.Phone.__new__(fast.Phone)
+        p.link = fast.adb_link.Connection("test")
         p.d = Mock()
         p.d.shell.return_value = types.SimpleNamespace(output=(
             "  mCurrentFocus=null\n  mFocusedApp=ActivityRecord{5e1 u0 com.android.settings/.Settings$AppNotificationSettingsActivity t88}\n"))
@@ -106,6 +108,7 @@ class FocusTests(unittest.TestCase):
 
     def test_resumed_activity_line_variants(self):
         p = fast.Phone.__new__(fast.Phone)
+        p.link = fast.adb_link.Connection("test")
         p.d = Mock()
         p.d.shell.side_effect = [types.SimpleNamespace(output="  mCurrentFocus=null\n"),
                                  types.SimpleNamespace(output="    mResumedActivity: ActivityRecord{9a u0 com.vivo.x/.MainActivity t3}\n")]

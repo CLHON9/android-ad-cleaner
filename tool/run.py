@@ -18,7 +18,7 @@
   python3 tool/run.py -s 序列号 dev-off --yes      从电脑上关闭开发者模式和 USB 调试（执行后电脑与手机断开）
   python3 tool/run.py -s 序列号 status-json        只读：一次输出全部状态（JSON，给图形界面用）
 """
-import datetime, glob, json, os, re, shutil, subprocess, sys, time
+import datetime, glob, json, os, re, subprocess, sys, time
 from pathlib import Path
 for _st in (sys.stdout, sys.stderr):
     try:
@@ -64,12 +64,10 @@ NEVER = {"com.heytap.quicksearchbox", "com.coloros.assistantscreen", "com.androi
 
 
 def adb_bin():
-    for c in (os.environ.get("ADB"), shutil.which("adb"),
-              os.path.expanduser("~/Library/Android/sdk/platform-tools/adb"),
-              os.path.expanduser("~/platform-tools/adb"), os.path.expanduser("~/android-tools/platform-tools/adb")):
-        if c and os.path.exists(c):
-            return c
-    sys.exit("找不到 adb。安装方法见 docs/01-准备工作.md")
+    path = adb_link.adb_path()
+    if not path:
+        sys.exit(adb_link.NO_ADB)
+    return path
 
 
 ADB = adb_bin()
@@ -77,13 +75,10 @@ ADB = adb_bin()
 
 def adb_shell(serial, cmd):
     """手机掉线时等它回来重试一次；仍不在就停止本步骤（Issue #147：以前读到空结果仍显示成功）。"""
-    for attempt in range(2):
-        r = subprocess.run([ADB, "-s", serial, "shell", cmd], capture_output=True, text=True, encoding="utf-8", errors="replace",
-                           creationflags=0x08000000 if os.name == "nt" else 0)
-        if not (r.returncode and adb_link.client_gone(r.stderr)):
-            return r
-        if attempt or not adb_link.wait_for(serial, ADB):
-            sys.exit(str(adb_link.lost(r.stderr)))
+    try:
+        return adb_link.Connection(serial, adb=ADB).shell(cmd)
+    except adb_link.DeviceLost as e:
+        sys.exit(str(e))
 
 
 def sh(serial, cmd, check=False):

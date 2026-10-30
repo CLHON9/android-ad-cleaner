@@ -138,6 +138,27 @@ class Device:
         return SimpleNamespace(output="", exit_code=0)
 
 
+def phone_stub(serial="test", shell=None, fast_mod=None, **fields):
+    """造一个不连手机的 Phone：假 link 与假传输都由它接好，其余属性按关键字传。
+
+    `shell` 顶替读屏库那条传输（签名 `(command, timeout=)`）；`serial` / `lost` 会写穿到 link 上。
+    单元测试要一个「有 Phone 的形状、但没有手机」的对象时用它，装配只此一处。
+    """
+    if fast_mod is None:
+        load_tool()
+        import fast as fast_mod
+    p = fast_mod.Phone.__new__(fast_mod.Phone)
+    p.link = fast_mod.adb_link.Connection(serial, transport=shell or _silent_shell)
+    for name, value in fields.items():
+        setattr(p, name, value)
+    return p
+
+
+def _silent_shell(command, timeout=None):
+    """没给 shell 时的传输：什么也不做，返回空输出。"""
+    return SimpleNamespace(output="", exit_code=0)
+
+
 def fake_phone(clock=None, size=SIZES[0], stages=((0.0, EMPTY_PAGE),),
                focus=((0.0, ""),), fast_mod=None, **fields):
     """造一个不连手机的 Phone：读屏走时间轴，点击 / 返回只推进假时钟。
@@ -146,15 +167,12 @@ def fake_phone(clock=None, size=SIZES[0], stages=((0.0, EMPTY_PAGE),),
     要换掉别的属性（想断言点击的坐标、想固定 locked）用关键字传进来，形如
     fake_phone(locked=lambda: True)。
     """
-    if fast_mod is None:
-        load_tool()
-        import fast as fast_mod
     clock = clock or Clock()
     timeline = Timeline(stages, focus)
-    p = fast_mod.Phone.__new__(fast_mod.Phone)
-    p.serial, p.lost = "fake", False
+    device = Device(timeline, size, clock)
+    p = phone_stub("fake", shell=device.shell, fast_mod=fast_mod)
     p.W, p.H = size
-    p.d = Device(timeline, size, clock)
+    p.d = device
     p.log, p.miss, p.changed = False, 0, []
     p.why, p.stage = "", ""
     p.vivo_seen, p.vivo_app, p.sysui = False, None, False
