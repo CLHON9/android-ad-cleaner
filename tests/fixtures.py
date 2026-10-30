@@ -152,6 +152,7 @@ def fake_phone(clock=None, size=SIZES[0], stages=((0.0, EMPTY_PAGE),),
     clock = clock or Clock()
     timeline = Timeline(stages, focus)
     p = fast_mod.Phone.__new__(fast_mod.Phone)
+    p.link = fast_mod.adb_link.Connection("test")
     p.serial, p.lost = "fake", False
     p.W, p.H = size
     p.d = Device(timeline, size, clock)

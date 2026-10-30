@@ -29,6 +29,7 @@ def recipe(p, only="__no_steps__"):
 class RotationTests(unittest.TestCase):
     def phone(self):
         p = fast.Phone.__new__(fast.Phone)
+        p.link = fast.adb_link.Connection("test")
         p.W, p.H, p.log = 1080, 2340, False
         p.d = Mock()
         return p

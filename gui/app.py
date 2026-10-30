@@ -5,7 +5,7 @@
 后台：tool/run.py、tool/fast.py、tool/chan_fast.py，以子进程运行，日志实时回传界面。
 打包后没有独立的 Python，子进程用「本程序 --cli 脚本名 参数…」的方式启动。
 """
-import hashlib, json, os, platform, re, runpy, shutil, subprocess, sys, threading, time, urllib.error, urllib.request, uuid, zipfile
+import hashlib, json, os, platform, re, runpy, subprocess, sys, threading, time, urllib.error, urllib.request, uuid, zipfile
 from pathlib import Path
 
 APP_NAME = "安卓去广告"
@@ -17,6 +17,7 @@ IS_WIN = platform.system() == "Windows"
 sys.path.insert(0, TOOL)
 from channel_policy import protected_channel
 from troubleshooting import UI_RECOVERY, is_ui_connection_error
+import adb_link
 
 
 def data_dir():
@@ -98,12 +99,10 @@ def adb_ok(path):
 
 def find_adb():
     exe = "adb.exe" if IS_WIN else "adb"
-    cands = [os.path.join(DATA, "platform-tools", exe), shutil.which("adb"),
-             os.path.expanduser("~/Library/Android/sdk/platform-tools/adb"),
-             os.path.join(os.environ.get("LOCALAPPDATA", ""), "Android", "Sdk", "platform-tools", "adb.exe"),
-             "/opt/homebrew/bin/adb", "/usr/local/bin/adb"]
-    for c in cands:
-        if c and os.path.exists(c) and adb_ok(c):
+    last = (os.path.join(os.environ.get("LOCALAPPDATA", ""), "Android", "Sdk", "platform-tools", "adb.exe"),
+            "/opt/homebrew/bin/adb", "/usr/local/bin/adb")
+    for c in adb_link.adb_candidates(first=(os.path.join(DATA, "platform-tools", exe),), last=last):
+        if adb_ok(c):
             return c
     return None
 
@@ -112,13 +111,7 @@ def adb_present(adb, serial):
     """手机此刻是否连着（adb 状态为 device）；先给它 10 秒回来。"""
     if not adb:
         return False
-    try:
-        subprocess.run([adb, "-s", serial, "wait-for-device"], capture_output=True, timeout=10, creationflags=NOWIN)
-        out = subprocess.run([adb, "-s", serial, "get-state"], capture_output=True, text=True,
-                             timeout=8, creationflags=NOWIN).stdout
-    except (OSError, subprocess.TimeoutExpired):
-        return False
-    return out.strip() == "device"
+    return adb_link.Connection(serial, adb=adb).alive(wait=10)
 
 
 CHIME_GAP = 3       # 秒：几件事挤在一起时只响一次
@@ -347,9 +340,7 @@ class Api:
         return r.stdout, r.stderr, r.returncode
 
     def _adb(self, *args, timeout=20):
-        r = subprocess.run([self.adb, *args], capture_output=True, text=True, encoding="utf-8",
-                           errors="replace", timeout=timeout, creationflags=NOWIN)
-        return r.stdout
+        return adb_link.invoke(self.adb, *args, timeout=timeout)
 
     # ----- 下载 adb -----
     def download_adb(self):

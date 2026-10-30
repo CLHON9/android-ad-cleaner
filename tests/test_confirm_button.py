@@ -15,6 +15,7 @@ import fast
 
 def phone():
     p = fast.Phone.__new__(fast.Phone)
+    p.link = fast.adb_link.Connection("test")
     p.W, p.H = 1080, 2400
     p.log, p.miss, p.changed = False, 0, []
     p.d = Mock()
