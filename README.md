@@ -101,6 +101,7 @@
 | OPPO | Find X10 Pro Max（PMX110） | ColorOS 17.0.0.116 / Android 17 | ✅ 源码新增：9 段，全跑约 4 分钟；下拉搜索需手动，浏览器「摇一摇广告」点不动 | ✅ | ✅ 45 个渠道 |
 | OPPO | Find X9 Ultra（PMA120） | ColorOS 16.0.10 | ❌ 页面和 N6 不同，待补 | 部分 | ✅ 27 个渠道 |
 | OPPO | Find N3 典藏版（PHN110） | ColorOS 16.0.5 | ❌ 待补 | 部分 | ✅ 27 个渠道 |
+| OPPO | Find N5（PKH110） | ColorOS 17.0.0.103 / Android 17 | ✅ 2026-10-29 七段实测通过，重跑 144 秒；负一屏需手动（设置页受权限保护） | ✅ | ✅ 42 个渠道 |
 | 小米 | 18 Pro Max（M154FF） | HyperOS 4.0.24 | ✅ 10-25 前轮九段通过，新增兼容改动待复测 | ✅ | ✅ |
 | 小米 | 17 Ultra 标准版（2512BPNDAC） | HyperOS OS4.0.5.0.XPACNXM / Android 17 | ✅ 10-28 九段实测通过，重跑 176 秒 | ✅ | ✅ 1 个渠道（商店「其他」） |
 | 小米 | 15（24129PN74C） | HyperOS OS4.0.0.22.XOCCNXM / Android 17 | ✅ 10-29 九段实测通过，重跑 164 秒 | ✅ | —（未跑） |

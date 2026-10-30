@@ -145,6 +145,25 @@
 - 软件商店（26.10.2_CN）没有「服务管理」子页；个性化推荐在「账号与隐私 → 隐私授权管理 → 个性化推荐」。
 - `com.coloros.video` 打不开设置页；下拉搜索没有可启动的页面，只能从桌面下滑唤起（桌面下滑设成了通知栏时进不去）。
 - 连不上 adb、`adb devices` 只显示 `offline`，USB 日志里有 `Error [31]` / `Failed to get BOS header`：是线或接口的问题，换线后连上。
+### OPPO Find N5（PKH110 / ColorOS 17.0.0.103 / Android 17）
+
+实测日期：2026-10-29。机型脚本：`recipes/oppo-PKH110/recipe.py`，七段整段重跑 144 秒，二次重跑为幂等（新增关闭 0 项）。
+
+| 位置 | 差异与处理 |
+|---|---|
+| 广告跟踪 | 「隐私」已并入「隐私与安全」。用系统设置搜索「设备标识与广告」能搜到，但**点搜索结果不跳转**（会停在首页并弹一个「取消」）。走面板路径：设置 → 隐私与安全 → 设备标识与广告（`OplusSettingsActivity$DevicesIdentifySettingsActivity`）→ 广告跟踪（`OAIDActivity`）。本机 139 项，全部默认开启 |
+| 软件商店 | `oppo.intent.action.APP_SETTINGS` 直达可用，绕开「我的」页。服务管理 44 个开关只剩「应用管家-应用安全」开着（保留项）；「我的专区：签到按钮」「福利专区」本机型不存在 |
+| 浏览器 | 底部 ☰ 和「我的」两条入口都不稳定；`APP_SETTINGS` 直达 `BrowserPreferencesPage` 可用。「隐私 → 个性化管理」页只有「个性化内容推荐」「个性化广告推荐」两项，且两项都开时只读到后者的 Switch 节点，需按标题单独点 |
+| 主题商店 | `APP_SETTINGS` 落在 `com.nearme.themespace.activities.SettingActivity`，**没有固定页标题**，不能按页标题等页面。服务管理 → 消息与广告 可关「消息通知」「开屏广告」 |
+| 下拉搜索 | 桌面下滑手势在 adb 下不稳定（多次 `input swipe` 都停在 Launcher）；直接拉 `com.heytap.quicksearchbox/.ui.activity.SearchHomeActivity`，BACK 收键盘后点**最靠下**的那个「设置」。该页还有同名「设置」项（在搜索范围列表里），点错会进系统设置。「搜索范围」页全是数据源（本机应用、相册、网页搜索结果……），关掉会搜不到东西，不要动；推荐项在「首页卡片管理」「功能管理」 |
+| 下拉搜索卡片 | 关掉「探索发现」后，同页的「每日热榜」「推荐卡片」会从列表里一并消失；关掉「搜索框提示词」后，「搜索历史」「剪切板内容」「猜你想搜」也会从「功能管理」页消失。都不是「未找到」，`close_titles` 报未找到属正常 |
+| 负一屏 | 设置页（`com.heytap.iflow.main.setting.SettingsActivity`）**受 `oppo.permission.OPPO_COMPONENT_SAFE` 保护**，`am start` 直接被拒；左边缘滑动手势用 `input swipe`（x=0/2/5，150–2000ms 五档）始终停在 Launcher，进不去。`disable_assistant_screen=0`、`assistant_space_enable=1` 说明速览本身是开着的。**需机主手动**：桌面左滑 → 左上头像 → 设置 → 关「热点资讯」、把「推荐服务 → 轮播推荐」设为不显示、关「搜索框提示词」。不要关「推荐服务」总开关（会删掉天气、步数、清理卡片） |
+| 速览总开关 | 桌面设置里有「速览」开关（关闭后桌面最左页不再显示速览页面）。这是整页关闭，会连快递、日历、睡眠卡片一起消失，不作为自动流程的一步 |
+| OPPO 视频 | 「我的 → 设置」能进，但设置页是纯文字行，没有可读开关节点，自动点不了 |
+| 游戏中心 | 本机未安装 `com.nearme.gamecenter` |
+| 营销通知 | `chan-scan` 候选 46 条，剔掉负一屏「最新服务资讯通知」、钉钉「内容通知」、X「直播空间」后关 42 个，复查 0 个仍开着 |
+| 广告包与快应用 | 经机主同意挂起 `com.opos.ads`、`com.heytap.pictorial`，关闭 3 个快应用组件；挂起后可用 `unsuspend` / `quickapp on` 还原 |
+
 
 ### OPPO Pad Mini（OPD2515 / ColorOS 16.1.0）
 
