@@ -47,6 +47,19 @@ class MeizuRecipeTests(unittest.TestCase):
         p.click.assert_not_called()
         self.assertEqual(p.d.shell.call_count, 2)
 
+    def test_entry_under_navigation_bar_is_scrolled_before_click(self):
+        p = self.phone()
+        target = ET.Element("node", {"package": "app"})
+        p.texts.side_effect = [[("入口", (100, 1940, 900, 1980), target)],
+                               [("入口", (100, 1200, 900, 1280), target)]]
+        p.scroll_more.return_value = True
+        scope = self.load(p)
+        scope["TARGET_PACKAGE"] = "app"
+        with patch.object(scope["time"], "sleep"):
+            scope["tap_text"]("入口", scrolls=1)
+        p.scroll_more.assert_called_once()
+        p.click.assert_called_once_with(500, 1240)
+
     def test_missing_or_duplicate_target_stops_before_click(self):
         for switches in ([('其他', True, (1, 2))],
                          [('目标', True, (1, 2)), ('目标', True, (3, 4))]):

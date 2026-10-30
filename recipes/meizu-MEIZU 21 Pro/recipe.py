@@ -1,5 +1,5 @@
 # 魅族 21 Pro（MEIZU 21 Pro，Flyme 12.6.0.0A / Android 16）。
-# 2026-10-30 真机重跑：手机管家个性化推荐入口未通过，其余目标已读到关闭。
+# 2026-10-30 真机分段验证：所有目标已读到关闭；手机管家入口修复后单独复测通过。
 # 不处理通知渠道、快应用或广告包；不修改服务类通知和负一屏卡片。
 BUILD = "Flyme 12.6.0.0A"
 MODELS = ["MEIZU 21 Pro"]
@@ -73,6 +73,11 @@ def tap_text(text, scrolls=0):
                         f"「{text}」有多个位置，未点击")
             x, y = min(centers, key=lambda xy: xy[1])
             require(0 <= x < p.W and 0 <= y < p.H, "坐标不在屏幕内")
+            # 底部可能被系统导航区域覆盖，即使文字节点中心仍在屏幕内。
+            if y >= p.H * .95:
+                if index < scrolls and p.scroll_more():
+                    continue
+                raise RuntimeError(f"「{text}」位于屏幕底部导航区域附近，未点击")
             p.click(x, y)
             time.sleep(.7)
             return
