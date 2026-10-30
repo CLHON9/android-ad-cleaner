@@ -26,7 +26,7 @@ class OppoPkt110RecipeTests(unittest.TestCase):
         self.assertEqual(run.recipe_meta(path)["build"], "PKT110_17.0.0.102(CN01)")
 
     def test_other_oppo_model_falls_back_to_reference_recipe(self):
-        path, reference = run.recipe_for("PMX110", "OPPO")
+        path, reference = run.recipe_for("PZZ999", "OPPO")      # 没有本型号脚本的 OPPO（PMX110 已由 #279 补上）
         self.assertTrue(reference)
         self.assertEqual(Path(path).parent.name, "oppo-PLP120")
 

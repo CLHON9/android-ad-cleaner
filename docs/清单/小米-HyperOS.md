@@ -11,7 +11,7 @@
 | Xiaomi 15（24129PN74C） | HyperOS OS4.0.0.22.XOCCNXM，Android 17 | 2026-10-29 真机实测；专用脚本九段全通过（164 秒，`recipes/xiaomi-24129PN74C/recipe_os4.py`） |
 | Xiaomi Pad 7（2410CRP4CC） | HyperOS OS2.0.208.0.VOZCNXM，Android 15 | 2026-10-28 实测；四段脚本复跑通过，约 61 秒 |
 | REDMI K80 至尊版（25060RK16C） | HyperOS 2（BP2A.250605.031.A3），Android 16 | 2026-10-27 真机实测；专用脚本九段全通过并回读（recipes/redmi-25060RK16C） |
-| REDMI K80 Pro（24122RKC7C） | HyperOS OS3.0.304.0.WOMCNXM，Android 16 | 2026-10-29 真机实测；首轮借 K70 路径关 20 项，专用脚本九段复跑 172 秒、0 异常（`recipes/redmi-24122RKC7C`，见 [实测记录](../14-红米K80Pro实测.md)） |
+| REDMI K80 Pro（24122RKC7C） | HyperOS OS3.0.304.0.WOMCNXM，Android 16 | 2026-10-29 真机实测；首轮借 K70 路径关 20 项，专用脚本九段复跑 172 秒、0 异常（`recipes/redmi-24122RKC7C`，见 [实测记录](../15-红米K80Pro实测.md)） |
 | REDMI K90 Pro Max（25102RKBEC） | HyperOS OS4.0.2.0.XPMCNXM，Android 17 | 2026-10-27 实测，九段机型脚本全通过（169 秒） |
 | Redmi Note 12 Turbo（23049RAD8C） | HyperOS OS3.0.5.0.VMRCNXM，Android 15 | 2026-10-25 实测（九段脚本跑通，用时约 3.5 分钟） |
 | Redmi K70（23113RKC6C） | HyperOS OS3.0.307.0.WNKCNXM，Android 16 | 2026-10-26 无线+有线：9 段专用脚本；当前目标 20 项；本轮实测含已移除的小说 1 项；浏览器「最新资讯」disabled，未操作 |
