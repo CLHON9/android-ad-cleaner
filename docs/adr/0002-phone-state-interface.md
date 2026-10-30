@@ -17,4 +17,4 @@
 - `Phone.__init__` 声明了 `safe_mode` / `systemui_text` / `vivo_seen`，`pause_at_lock_check` 的 `getattr` 兜底一并去掉：忘了初始化的 `.__new__` 装配会在第一次读的时候炸，而不是静默走默认值。
 - `tests/fixtures.py` 的 `phone_stub()` 成为这些默认值的唯一装配点，只有一处偏离构造处：`pause_at_lock_check` 默认 `False`，因为假手机后面没有客户端在点「暂停」。屏尺寸 `W` / `H` 与读屏 adapter 不设默认，它们是每条用例的前提。
 - `Phone.reader` 是 adapter 的名字，`Phone.d` 是它的历史别名（写穿 property）。`chan_fast.parse()` 仍然收 `ShellPhone`——那是 adb 连接自带的 `d = self`，不是 `Phone`。
-- 没有真机可验，验收是单测加改前改后对拍：`texts()` 216 组（页面样本 × 两种屏尺寸 × 策略开 / 关）、`entries()` 110 组（页面 × 包名）、`off()` 2 组（安全模式开 / 关），逐项一致。守卫：翻策略有 2 组输出真的变了，换包名有 2 页输出真的变了，安全模式把同一页的点击从 6 次降到 3 次。
+- 没有真机可验，验收是单测加改前改后对拍，驱动在 `tests/compare_phone_state.py`（把改动前的 `tool/` 导出成基线，一条命令跑两边）：`texts()` 216 组（页面样本 × 两种屏尺寸 × 策略开 / 关）、`entries()` 110 组（页面 × 包名）、`off()` 2 组（安全模式开 / 关），逐项一致。守卫：翻策略有 2 组输出真的变了，换包名有 2 页输出真的变了，安全模式把同一页的点击从 6 次降到 3 次。

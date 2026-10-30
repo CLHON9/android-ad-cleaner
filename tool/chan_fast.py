@@ -722,7 +722,6 @@ def run(a):
                     if p is None:
                         print("正在连接手机读屏服务……", flush=True)
                         p = Phone(serial, log=False)
-                        p.vivo_seen = False
                         p.pause_at_lock_check = False   # 渠道里面查锁屏的地方不是安全位置：只在两个渠道之间暂停
                         if not p.wait_unlocked():
                             failures += 1

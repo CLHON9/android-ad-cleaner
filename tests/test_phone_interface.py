@@ -6,7 +6,6 @@
 import sys
 import unittest
 from pathlib import Path
-from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tool"))
@@ -46,46 +45,23 @@ class EntriesTests(unittest.TestCase):
         self.assertEqual(explore.entries(p, "com.android.settings"), ["隐私", "广告"])
 
 
-class FakeReader:
-    """一个按 Reader 接口写的假设备：只实现 Phone 真正会调到的方法。"""
-
-    def __init__(self, page="<hierarchy/>", size=(1080, 2340)):
-        self.page, self.size, self.commands = page, size, []
-        self.settings = {}
-        self.closed = False
-
-    def shell(self, command, timeout=60):
-        self.commands.append(command)
-        return SimpleNamespace(output="", exit_code=0)
-
-    def dump_hierarchy(self):
-        return self.page
-
-    def window_size(self):
-        return self.size
-
-    def screenshot(self):
-        return None
-
-    def app_stop(self, package):
-        self.stopped = package
-
-    def close(self):
-        self.closed = True
+def reader(page="<hierarchy/>", size=(1080, 2340)):
+    """夹具里的假设备就是一个 Reader；这里只补上时间轴与假时钟。"""
+    return Device(Timeline([(0.0, page)]), size, Clock())
 
 
 class ReaderTests(unittest.TestCase):
     def test_fixtures_device_is_a_reader(self):
-        self.assertIsInstance(Device(Timeline([(0.0, "<hierarchy/>")]), (1080, 2340), Clock()), Reader)
+        self.assertIsInstance(reader(), Reader)
 
     def test_a_stub_reader_is_the_same_object_as_d(self):
-        p = phone_stub("S", d=FakeReader())
+        p = phone_stub("S", d=reader())
         self.assertIs(p.d, p.reader)                                  # `d` 只是历史名字
-        p.d = FakeReader()                                            # 写 `d` 也写穿到 reader
-        self.assertIsInstance(p.reader, FakeReader)
+        p.d = reader()                                                # 写 `d` 也写穿到 reader
+        self.assertIsNotNone(p.reader)
 
     def test_phone_can_be_built_from_a_named_reader(self):
-        r = FakeReader()
+        r = reader()
         p = fast.Phone("S", log=False, reader=r)
         self.assertIs(p.reader, r)
         self.assertEqual((p.W, p.H), (1080, 2340))

@@ -135,7 +135,7 @@ class NotificationTests(unittest.TestCase):
         p.locked.return_value = False
         seen = []
         with patch.object(chan, "parse", return_value=({("com.x", "w"): ("福利活动 ", 3, False)}, {})), \
-             patch.object(chan, "wait_page", side_effect=lambda p, name, rounds=12: seen.append(name)), \
+             patch.object(chan, "wait_page", side_effect=lambda p, name, at, rounds=12: seen.append(name)), \
              patch.object(chan, "via_app_page", return_value=None), patch.object(chan, "page_hint", return_value=""):
             chan.toggle(p, "com.x", "w", False, "福利活动 ")
         self.assertEqual(seen, ["福利活动"])

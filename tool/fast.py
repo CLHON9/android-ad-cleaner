@@ -23,6 +23,7 @@ from ui_session import connect
 from troubleshooting import UI_RECOVERY, XIAOMI_INPUT, accessibility_summary, input_blocked
 import adb_link
 import wait
+from reader import Reader
 from row import SWITCH_ROW_DEPTH, bounds, own, title_of
 
 DISMISS = ("以后再说", "暂不更新", "暂不", "取消", "我知道了", "跳过", "禁止", "不再提示", "不同意")
@@ -84,7 +85,7 @@ def _shell_transport(shell):
 
 
 class Phone:
-    def __init__(self, serial, log=True, reader=None):
+    def __init__(self, serial, log=True, reader: Reader | None = None):
         if log:
             print("正在连接手机读屏服务……", flush=True)
         try:
