@@ -274,6 +274,60 @@ class DismissTests(unittest.TestCase):
             self.assertEqual(p.dismiss(), "不同意")
         p.click.assert_called_once_with(350, 2450)
 
+    def test_app_update_dialog_is_cancelled_even_with_scrollable_body(self):
+        # #286：主题商店的更新说明在可滚动容器里，只按「带滚动列表」就跳过会让底部标签栏一直点不到
+        p = self.phone('''<hierarchy><node class="android.widget.FrameLayout" bounds="[0,0][1272,2772]">
+          <node text="检测到新版本" bounds="[300,200][780,260]"/>
+          <node class="androidx.recyclerview.widget.RecyclerView" scrollable="true" bounds="[76,300][1004,1200]">
+            <node text="更新说明" bounds="[100,400][400,460]"/>
+            <node text="精彩内容持续上新，更多有趣玩法等你体验，快来更新吧！" bounds="[100,500][980,700]"/></node>
+          <node text="下载并更新" class="android.widget.Button" clickable="true" bounds="[120,1300][960,1450]"/>
+          <node text="取消" clickable="true" bounds="[400,1550][680,1650]"/></node></hierarchy>''')
+        p.focus = Mock(return_value="com.heytap.themestore/.MainActivity")
+        with patch.object(fast.time, "sleep"):
+            self.assertEqual(p.dismiss(), "取消")
+        p.click.assert_called_once_with(540, 1600)
+
+    def test_version_row_on_settings_page_is_not_an_update_dialog(self):
+        # 设置页里常有一行「版本更新」，单独出现不能当成弹窗的标题
+        p = self.phone('''<hierarchy><node class="androidx.recyclerview.widget.RecyclerView" scrollable="true" bounds="[0,0][1272,2772]">
+          <node text="版本更新" bounds="[100,300][600,400]"/>
+          <node text="取消" bounds="[100,2000][400,2100]"/></node></hierarchy>''')
+        with patch.object(fast.time, "sleep"):
+            self.assertIsNone(p.dismiss())
+        p.click.assert_not_called()
+
+
+class BottomBarWaitTests(unittest.TestCase):
+    """底栏按钮在应用内更新弹窗晚到时也要等到它被关掉（#286）。"""
+
+    def tap_after(self, found_at):
+        p = fast.Phone.__new__(fast.Phone)
+        p.link = fast.adb_link.Connection("test")
+        p.W, p.H, p.log = 1272, 2772, False
+        p.d = Mock()
+        p.say = Mock()
+        p.sig = Mock(return_value="page")
+        p.settle = Mock(return_value=True)
+        p.click = Mock()
+        clock = [0.0]
+        p.find = Mock(side_effect=lambda *a, **k: (540, 2400) if clock[0] >= found_at else None)
+        p.dismiss = Mock(return_value=None)
+        with patch.object(fast.time, "time", side_effect=lambda: clock[0]), \
+                patch.object(fast.time, "sleep", side_effect=lambda s: clock.__setitem__(0, clock[0] + s)):
+            ok = p.tap("我的", exact=True, scrolls=0)
+        return ok, p
+
+    def test_bottom_bar_waits_through_late_update_popup(self):
+        ok, p = self.tap_after(4.4)
+        self.assertTrue(ok)
+        p.click.assert_called_once_with(540, 2400)
+
+    def test_bottom_bar_gives_up_after_six_seconds(self):
+        ok, p = self.tap_after(6.5)
+        self.assertFalse(ok)
+        p.click.assert_not_called()
+
 
 class ScanWordingTests(unittest.TestCase):
     def test_overlay_notice_is_not_a_marketing_candidate(self):

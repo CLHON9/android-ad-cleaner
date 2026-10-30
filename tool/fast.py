@@ -27,6 +27,9 @@ from reader import Reader
 from row import SWITCH_ROW_DEPTH, bounds, own, title_of
 
 DISMISS = ("以后再说", "暂不更新", "暂不", "取消", "我知道了", "跳过", "禁止", "不再提示", "不同意")
+# 应用内更新弹窗的标题（主题商店 17.22.0beta2 是「检测到新版本」，#286）。它通常把更新说明放进可滚动容器，
+# 只按标题认，不按按钮认：单个「取消」在正常设置面板里也有。
+UPDATE_TITLE = re.compile(r"检测到新版本|发现新版本|版本更新提示")
 CONFIRM = ("确定", "关闭", "仍要关闭", "确认关闭", "确认", "继续关闭", "关闭推荐", "仍然关闭")
 PERMISSION_CONTROLLERS = {"com.android.permissioncontroller", "com.google.android.permissioncontroller"}
 # 输入框：荣耀 MagicOS 10（PNM-AN10 10.0.0.102）设置搜索框是 AutoCompleteTextView，类名里没有 EditText
@@ -439,25 +442,36 @@ class Phone:
                     self.say(f"  · 弹窗点了 ✕（{key.strip()[:40]}）")
                     return "✕"
         tx = self.texts(root)
+
+        def refuse():
+            for w in DISMISS:
+                for t, (l, tp, r, b), _ in tx:
+                    if t == w:
+                        self.click((l + r) // 2, (tp + b) // 2); time.sleep(0.6)
+                        self.say(f"  · 弹窗点了「{w}」")
+                        return w
+            return None
+
+        # 更新弹窗先认，且不看有没有滚动列表：主题商店把更新说明放在可滚动容器里，下面的守卫会漏掉它（#286）；
+        # 正常设置面板没有「检测到新版本」这类标题，所以仍不会被当成弹窗。
+        if any(UPDATE_TITLE.search(t) for t, _, _ in tx):
+            hit = refuse()
+            if hit:
+                return hit
         if len(tx) > 16:
             return None
         # 天气等 App 的正常设置面板也有「取消」。带开关/滚动列表的页面不能仅凭文字当弹窗关掉。
         if any(n.get("checkable") == "true" or n.get("scrollable") == "true" for n in root.iter("node")):
             return None
-        for w in DISMISS:
-            for t, (l, tp, r, b), _ in tx:
-                if t == w:
-                    self.click((l + r) // 2, (tp + b) // 2); time.sleep(0.6)
-                    self.say(f"  · 弹窗点了「{w}」")
-                    return w
-        return None
+        return refuse()
 
     def tap(self, text, exact=False, scrolls=6, wait=0.6):
         """找到就点。往下翻着找；翻到底没有，就回顶部再找一遍。
-        scrolls=0（点底栏/按钮）：不翻页，但 3 秒内边等边关弹窗。"""
+        scrolls=0（点底栏/按钮）：不翻页，但 6 秒内边等边关弹窗——应用内更新弹窗要等版本检查
+        回来才冒出来，3 秒够不着（#286）。"""
         if scrolls == 0:
             t0 = time.time()
-            while time.time() - t0 < 3.0:
+            while time.time() - t0 < 6.0:
                 xy = self.find(text, exact, edge_ok="tab", nav=True)
                 if xy:
                     b = self.sig(); self.click(*xy); self.settle(b, wait + 0.4)

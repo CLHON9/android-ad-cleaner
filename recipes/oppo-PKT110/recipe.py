@@ -187,15 +187,16 @@ def _():
 @step("主题商店")
 def _():
     """主题商店 → 我的 → 设置：服务管理 → 消息与广告；隐私 → 个性化推荐设置。
-    「个性化推荐设置」点下去先弹确认框，确认后页面退回「设置」，回读前要重新进一次。"""
+    「个性化推荐设置」点下去先弹确认框，确认后页面退回「设置」，回读前要重新进一次。
+    首页的「检测到新版本」弹窗盖住底部标签栏，「我的」要用会关弹窗的 p.tap（#286）。"""
     def to_privacy():
         p.start("com.heytap.themestore")
-        p.d(text="我的").click(); time.sleep(1.5)
+        require(p.tap("我的", exact=True, scrolls=0), "没找到底部「我的」")
         tap("设置", scrolls=0)
         tap("隐私", scrolls=0)
 
     p.start("com.heytap.themestore")
-    p.d(text="我的").click(); time.sleep(1.5)
+    require(p.tap("我的", exact=True, scrolls=0), "没找到底部「我的」")
     tap("设置", scrolls=0)
     tap("服务管理", scrolls=0)
     tap("消息与广告", scrolls=0)
@@ -209,7 +210,7 @@ def _():
 def _():
     """OPPO 视频 → 我的（底部标签）→ 设置 → 个性化管理。"""
     p.start("com.heytap.yoli")
-    p.d(text="我的").click(); time.sleep(1.5)
+    require(p.tap("我的", exact=True, scrolls=0), "没找到底部「我的」")
     tap("设置", scrolls=0)
     tap("个性化管理")
     close_named(["个性化广告推荐", "个性化内容推荐"], "视频·个性化管理")
