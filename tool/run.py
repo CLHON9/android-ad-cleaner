@@ -156,12 +156,19 @@ def recipe_meta(path):
             "models": re.findall(r'"([^"]+)"', models.group(1)) if models else []}
 
 
-def recipe_for(model, brand=""):
+def recipe_for(model, brand="", device_info=None):
     """返回 (路径, 是否参考)。先找本型号（目录名或脚本里的 MODELS）；没有就找同品牌别的机型，作参考。"""
     allr = sorted(glob.glob(os.path.join(ROOT, "recipes", "*", "recipe.py")))
     for r in allr:
         d = os.path.basename(os.path.dirname(r))
         if d.endswith("-" + model) or model in recipe_meta(r)["models"]:
+            # 一个型号可能有不同系统版本的实测路径。仅在版本明确匹配时选择变体。
+            if device_info:
+                variants = sorted(glob.glob(os.path.join(os.path.dirname(r), "recipe_*.py")))
+                for variant in variants:
+                    recorded = recipe_meta(variant)["build"]
+                    if recorded and build_ok(device_info, recorded):
+                        return variant, False
             return r, False
     fam = FAMILY.get((brand or "").lower())
     preferred = os.path.join(ROOT, "recipes", REFERENCE.get(fam, ""), "recipe.py")
@@ -376,7 +383,7 @@ def main():
         for ser, st in rows:
             if st != "device":
                 print(f"{ser}\t{st}\t（unauthorized=手机上点「允许 USB 调试」；offline=重插或重开无线调试）"); continue
-            i = info(ser); r, ref = recipe_for(i["model"], i["brand"])
+            i = info(ser); r, ref = recipe_for(i["model"], i["brand"], i)
             tag = (os.path.relpath(r, ROOT) + ("（同品牌参考）" if ref else "")) if r else "无（只能跑通用部分）"
             print(f"{ser}\t{i['name'] or i['brand']+' '+i['model']}\t{i['model']}\t{i['build']}\t机型脚本：{tag}")
         return
@@ -388,7 +395,7 @@ def main():
         sys.exit(py("fast.py", "-s", s, "check"))
 
     elif cmd == "check":
-        i = info(s); r, ref = recipe_for(i["model"], i["brand"])
+        i = info(s); r, ref = recipe_for(i["model"], i["brand"], i)
         print(f"机型：{i['name'] if i['name'].upper().startswith(i['brand'].upper()) else i['brand']+' '+i['name']}（{i['model']}），系统 {i['build']}，Android {i['android']}")
         print(f"锁屏：{'是（请机主解锁）' if locked(s) else '否'}")
         if input_blocked(s, i["brand"]):
@@ -427,7 +434,7 @@ def main():
         print(f"快照已存：{display_backup_path(d)}")
 
     elif cmd == "recipe":
-        i = info(s); r, ref = recipe_for(i["model"], i["brand"])
+        i = info(s); r, ref = recipe_for(i["model"], i["brand"], i)
         use_ref = "--ref" in rest
         rest = [x for x in rest if x != "--ref"]
         if not r or (ref and not use_ref):
@@ -598,7 +605,7 @@ def main():
 
     elif cmd == "status-json":
         import json
-        i = info(s); r, ref = recipe_for(i["model"], i["brand"]); steps, rb, ok = [], "", True
+        i = info(s); r, ref = recipe_for(i["model"], i["brand"], i); steps, rb, ok = [], "", True
         if r:
             meta = recipe_meta(r)
             steps, rb = meta["steps"], meta["build"]
